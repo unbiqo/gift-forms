@@ -1,0 +1,353 @@
+const ClaimExperience = ({ campaign, products = [], standalone = false }) => {
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [showManualAddress, setShowManualAddress] = useState(false);
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phoneCountry: 'US',
+    phoneNumber: '',
+    instagram: '',
+    tiktok: '',
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const {
+    query: addressQuery,
+    setQuery: setAddressQuery,
+    suggestions: addressSuggestions,
+    loading: addressLoading,
+    handleSelect: handleAddressSelect,
+    selected: selectedAddress,
+    setSelected: setSelectedAddress,
+    clearSuggestions,
+  } = useAddressAutocomplete();
+
+  const previewInputClass =
+    'w-full rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+
+  const getFieldError = (field, value, state = formData) => {
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        if (!value) return 'Required';
+        if (value.length < 2) return 'Use at least 2 letters';
+        return '';
+      case 'email':
+        if (!value) return 'Required';
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Invalid email';
+      case 'phoneNumber': {
+        if (!value) return 'Required';
+        const dial = COUNTRY_DIAL_MAP[state.phoneCountry] || '';
+        const phone = parsePhoneNumberFromString(`${dial}${value}`, state.phoneCountry);
+        return phone && phone.isValid() ? '' : 'Invalid phone number';
+      }
+      case 'instagram':
+      case 'tiktok':
+        if (!value) return '';
+        return value.length >= 3 ? '' : 'Handle too short';
+      default:
+        return '';
+    }
+  };
+
+  const handleFieldChange = (field, rawValue) => {
+    const sanitizers = {
+      firstName: sanitizeName,
+      lastName: sanitizeName,
+      email: sanitizeEmail,
+      instagram: sanitizeHandle,
+      tiktok: sanitizeHandle,
+      phoneNumber: sanitizePhoneDigits,
+    };
+    const sanitized = sanitizers[field] ? sanitizers[field](rawValue) : rawValue;
+    setFormData(prev => {
+      const next = { ...prev, [field]: sanitized };
+      setFormErrors(current => ({ ...current, [field]: getFieldError(field, sanitized, next) }));
+      return next;
+    });
+  };
+
+  const handlePhoneCountryChange = iso => {
+    setFormData(prev => {
+      const next = { ...prev, phoneCountry: iso };
+      setFormErrors(current => ({
+        ...current,
+        phoneNumber: getFieldError('phoneNumber', next.phoneNumber, next),
+      }));
+      return next;
+    });
+  };
+
+  const handleBackToGifts = () => {
+    setIsClaiming(false);
+    setAddressQuery('');
+    setSelectedAddress(null);
+    clearSuggestions();
+    setShowManualAddress(false);
+  };
+
+  const wrapperClasses = standalone
+    ? 'min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8 relative overflow-hidden'
+    : 'hidden md:flex flex-1 bg-gray-100 flex-col items-center justify-center p-8 relative overflow-hidden';
+
+  return (
+    <div className={wrapperClasses}>
+      <div
+        className="absolute inset-0 opacity-40"
+        style={{ backgroundImage: 'radial-gradient(#d4d4ff 1px, transparent 1px)', backgroundSize: '18px 18px' }}
+      ></div>
+
+      {!standalone && (
+        <div className="flex items-center gap-2 mb-6 z-10">
+          <Smartphone size={16} className="text-gray-500" />
+          <span className="text-xs font-semibold tracking-widest text-gray-500 uppercase">
+            Live Mobile Preview
+          </span>
+        </div>
+      )}
+
+      <div className="relative w-[320px] h-[640px] z-10">
+        <div className="absolute inset-0 rounded-[48px] bg-slate-900 shadow-[0_25px_80px_-20px_rgba(15,23,42,0.8)]"></div>
+        <div className="absolute inset-[10px] rounded-[40px] bg-white overflow-hidden flex flex-col">
+          <div className="h-10 px-5 flex items-center justify-between text-[11px] text-gray-600">
+            <span>9:41</span>
+            <div className="flex gap-1.5 text-gray-500">
+              <Signal size={12} strokeWidth={2.5} />
+              <Wifi size={12} strokeWidth={2.5} />
+              <Battery size={12} strokeWidth={2.5} />
+            </div>
+          </div>
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-6 rounded-full bg-black"></div>
+
+          <div className="flex-1 overflow-y-auto scrollbar-hide px-5 pb-6 pt-10 space-y-5">
+            {!isClaiming ? (
+              <>
+                <div className="text-center">
+                  {campaign.brandLogo ? (
+                    <div className="h-8 w-20 mx-auto bg-gray-200 rounded animate-pulse" />
+                  ) : (
+                    <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: campaign.brandColor }}>
+                      YOUR BRAND
+                    </div>
+                  )}
+                  <div className="inline-flex px-3 py-1 bg-gray-100 rounded-full text-[10px] font-medium mb-3">
+                    Hello, Creator
+                  </div>
+                  <p className="text-lg font-medium text-gray-900 leading-tight">
+                    {campaign.welcomeMessage || 'Welcome!'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {products.length === 0 ? (
+                    <div className="col-span-2 py-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-xl">
+                      No products selected yet.
+                    </div>
+                  ) : (
+                    products.map(product => (
+                      <div key={product.id} className="group">
+                        <div className="aspect-[3/4] bg-gray-100 rounded-2xl overflow-hidden mb-2 relative">
+                          <img src={product.image} className="w-full h-full object-cover" alt={product.title} />
+                          <div className="absolute top-2 left-2 bg-white/90 backdrop-blur px-2 py-0.5 rounded text-[10px] font-medium">
+                            Free
+                          </div>
+                        </div>
+                        <div className="px-1">
+                          <div className="text-xs font-medium text-gray-900 truncate">{product.title}</div>
+                          <div className="text-[10px] text-gray-400 line-through">${product.price}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsClaiming(true);
+                    setShowManualAddress(false);
+                  }}
+                  className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2"
+                  style={{ backgroundColor: campaign.brandColor }}
+                >
+                  Claim {campaign.itemLimit} Gift{campaign.itemLimit > 1 ? 's' : ''} <ChevronRight size={16} />
+                </button>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={handleBackToGifts}
+                  className="flex items-center gap-1 text-xs font-medium text-indigo-600"
+                >
+                  <ChevronLeft size={14} /> Back to gifts
+                </button>
+                <div>
+                  <p className="text-base font-semibold text-gray-900">Tell us about you</p>
+                  <p className="text-xs text-gray-500">Complete the form to confirm shipping.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <input
+                      className={`${previewInputClass} ${formErrors.firstName ? 'border-red-400' : ''}`}
+                      placeholder="First name"
+                      value={formData.firstName}
+                      onChange={e => handleFieldChange('firstName', e.target.value)}
+                    />
+                    {formErrors.firstName && <p className="text-[10px] text-red-500 mt-1">{formErrors.firstName}</p>}
+                  </div>
+                  <div>
+                    <input
+                      className={`${previewInputClass} ${formErrors.lastName ? 'border-red-400' : ''}`}
+                      placeholder="Last name"
+                      value={formData.lastName}
+                      onChange={e => handleFieldChange('lastName', e.target.value)}
+                    />
+                    {formErrors.lastName && <p className="text-[10px] text-red-500 mt-1">{formErrors.lastName}</p>}
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      className={`${previewInputClass} ${formErrors.email ? 'border-red-400' : ''}`}
+                      placeholder="Email"
+                      type="email"
+                      value={formData.email}
+                      onChange={e => handleFieldChange('email', e.target.value)}
+                    />
+                    {formErrors.email && <p className="text-[10px] text-red-500 mt-1">{formErrors.email}</p>}
+                  </div>
+                </div>
+
+                {campaign.showPhoneField && (
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-gray-600">Phone number</label>
+                    <div className="flex gap-2">
+                      <select
+                        className="w-20 rounded-xl border border-gray-200 px-2 py-2 text-[11px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        value={formData.phoneCountry}
+                        onChange={e => handlePhoneCountryChange(e.target.value)}
+                      >
+                        {COUNTRY_DIAL_OPTIONS.map(option => (
+                          <option key={option.iso} value={option.iso}>
+                            {option.dial}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className={`${previewInputClass} flex-1 ${formErrors.phoneNumber ? 'border-red-400' : ''}`}
+                        placeholder="Phone number"
+                        type="tel"
+                        value={formData.phoneNumber}
+                        onChange={e => handleFieldChange('phoneNumber', e.target.value)}
+                      />
+                    </div>
+                    {formErrors.phoneNumber && <p className="text-[10px] text-red-500">{formErrors.phoneNumber}</p>}
+                  </div>
+                )}
+
+                {campaign.showInstagramField && (
+                  <div>
+                    <input
+                      className={`${previewInputClass} ${formErrors.instagram ? 'border-red-400' : ''}`}
+                      placeholder="@instagram_handle"
+                      value={formData.instagram}
+                      onChange={e => handleFieldChange('instagram', e.target.value)}
+                    />
+                    {formErrors.instagram && <p className="text-[10px] text-red-500">{formErrors.instagram}</p>}
+                  </div>
+                )}
+                {campaign.showTiktokField && (
+                  <div>
+                    <input
+                      className={`${previewInputClass} ${formErrors.tiktok ? 'border-red-400' : ''}`}
+                      placeholder="@tiktok_handle"
+                      value={formData.tiktok}
+                      onChange={e => handleFieldChange('tiktok', e.target.value)}
+                    />
+                    {formErrors.tiktok && <p className="text-[10px] text-red-500">{formErrors.tiktok}</p>}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-gray-600">Shipping address</label>
+                  <div className="relative">
+                    <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 bg-white">
+                      <MapPin size={14} className="text-gray-400" />
+                      <input
+                        value={addressQuery}
+                        onChange={e => {
+                          setAddressQuery(e.target.value);
+                          setSelectedAddress(null);
+                        }}
+                        placeholder="Start typing address..."
+                        className="flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none"
+                      />
+                    </div>
+                    {addressLoading && (
+                      <div className="absolute right-3 top-2 text-[10px] text-gray-400">Searching...</div>
+                    )}
+                    {isClaiming && addressSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg text-xs text-gray-700 z-20 overflow-hidden">
+                        {addressSuggestions.map(suggestion => (
+                          <button
+                            type="button"
+                            key={suggestion.id}
+                            onClick={() => {
+                              handleAddressSelect(suggestion);
+                              setShowManualAddress(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                          >
+                            {suggestion.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {selectedAddress && (
+                    <p className="text-[10px] text-gray-400">{selectedAddress.lines.join(' • ')}</p>
+                  )}
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-indigo-600"
+                    onClick={() => setShowManualAddress(prev => !prev)}
+                  >
+                    {showManualAddress ? 'Hide manual address' : 'Enter address manually'}
+                  </button>
+                  {showManualAddress && (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <input className={`${previewInputClass} col-span-2`} placeholder="Street address" />
+                      <input className={previewInputClass} placeholder="Apt / Suite" />
+                      <input className={previewInputClass} placeholder="City" />
+                      <input className={previewInputClass} placeholder="State" />
+                      <input className={previewInputClass} placeholder="Postal code" />
+                    </div>
+                  )}
+                </div>
+
+                {campaign.showConsentCheckbox && (
+                  <label className="flex items-start gap-2 text-[11px] text-gray-600">
+                    <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    <span>{campaign.termsConsentText}</span>
+                  </label>
+                )}
+
+                <button
+                  type="button"
+                  className="w-full h-11 rounded-full text-white font-semibold text-sm shadow-lg"
+                  style={{ backgroundColor: campaign.brandColor }}
+                >
+                  Submit details
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-24 h-1.5 bg-slate-800 rounded-full"></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StandaloneCampaignForm = ({ campaign }) => (
+  <ClaimExperience campaign={campaign} products={campaign.selectedProducts || []} standalone />
+);
