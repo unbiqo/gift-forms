@@ -26,7 +26,9 @@ import {
   ExternalLink,
   Download,
   Link as LinkIcon,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  Tag
 } from 'lucide-react';
 
 /**
@@ -148,10 +150,18 @@ const RuleSection = ({ title, icon: Icon, children }) => (
 );
 
 const RuleToggle = ({ label, description, enabled, onChange }) => (
-  <div className="flex items-center justify-between">
-    <div className="mr-4">
+  <div className="flex items-center justify-between py-1">
+    <div className="flex items-center gap-2 mr-4">
       <p className="text-sm font-medium text-gray-900">{label}</p>
-      {description && <p className="text-xs text-gray-500">{description}</p>}
+      {description && (
+        <div className="group relative flex items-center">
+          <Info size={14} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+            {description}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+          </div>
+        </div>
+      )}
     </div>
     <Toggle enabled={enabled} onChange={onChange} label={label} />
   </div>
@@ -165,7 +175,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const [selectedIds, setSelectedIds] = useState([]);
   const [formData, setFormData] = useState({ 
     firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', address: '',
-    customAnswer: '' 
+    customAnswer: '', billingAddress: ''
   });
   
   const availableProducts = useMemo(() => {
@@ -373,6 +383,19 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             />
           </div>
         </div>
+
+        {/* Billing Address Field if Enabled */}
+        {campaign.enableBilling && (
+          <div className="pt-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Billing Address (Optional)</label>
+            <input 
+              placeholder="Billing address..." 
+              className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={formData.billingAddress}
+              onChange={e => setFormData(prev => ({...prev, billingAddress: e.target.value}))}
+            />
+          </div>
+        )}
 
         <div className="space-y-3 pt-2">
           {/* Main Consent */}
@@ -598,6 +621,13 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
     emailOptIn: true,
     emailConsentText: '',
     submitButtonText: '',
+
+    // Order Processing
+    orderTags: '',
+    customerTags: '',
+    discountCode: 'INFLUENCERGIFT',
+    keepDraft: false,
+    enableBilling: false,
   });
 
   const updateField = (field, val) => setData(p => ({ ...p, [field]: val }));
@@ -708,30 +738,62 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                 <RuleSection title="General Limits" icon={ShoppingCart}>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Item Limit</label>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700">Item Limit</label>
+                        <div className="group relative flex items-center">
+                          <Info size={12} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+                            Max items an influencer can select per order.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
                       <input type="number" min="1" max="10" value={data.itemLimit} onChange={e => updateField('itemLimit', parseInt(e.target.value))} className="w-full px-3 py-2 rounded-lg border" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Order Limit per Link</label>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700">Order Limit per Link</label>
+                        <div className="group relative flex items-center">
+                          <Info size={12} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+                            Total number of orders allowed for this campaign link.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
                       <input type="number" value={data.orderLimitPerLink} onChange={e => updateField('orderLimitPerLink', e.target.value)} placeholder="Unlimited" className="w-full px-3 py-2 rounded-lg border" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Max Cart Value ($)</label>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700">Max Cart Value ($)</label>
+                        <div className="group relative flex items-center">
+                          <Info size={12} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+                            Maximum total retail value allowed in the cart.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
                       <input type="number" value={data.maxCartValue} onChange={e => updateField('maxCartValue', e.target.value)} placeholder="No Limit" className="w-full px-3 py-2 rounded-lg border" />
                     </div>
                   </div>
                   <div className="pt-2">
-                    <RuleToggle label="Block Duplicate Orders" enabled={data.blockDuplicateOrders} onChange={v => updateField('blockDuplicateOrders', v)} />
+                    <RuleToggle 
+                      label="Block Duplicate Orders" 
+                      description="Prevent the same person (email/handle) from ordering more than once."
+                      enabled={data.blockDuplicateOrders} 
+                      onChange={v => updateField('blockDuplicateOrders', v)} 
+                    />
                   </div>
                 </RuleSection>
 
                 <RuleSection title="Contact Fields" icon={Users}>
-                  <RuleToggle label="Show Phone Field" enabled={data.requirePhone} onChange={v => updateField('requirePhone', v)} />
-                  <RuleToggle label="Show Instagram" enabled={data.showInstagramField} onChange={v => updateField('showInstagramField', v)} />
-                  <RuleToggle label="Show TikTok" enabled={data.showTiktokField} onChange={v => updateField('showTiktokField', v)} />
+                  <RuleToggle label="Show Phone Field" description="Ask for phone number during checkout." enabled={data.requirePhone} onChange={v => updateField('requirePhone', v)} />
+                  <RuleToggle label="Show Instagram" description="Ask for Instagram handle." enabled={data.showInstagramField} onChange={v => updateField('showInstagramField', v)} />
+                  <RuleToggle label="Show TikTok" description="Ask for TikTok handle." enabled={data.showTiktokField} onChange={v => updateField('showTiktokField', v)} />
                   
                   <div className="pt-2 border-t border-gray-100">
-                    <RuleToggle label="Ask Custom Question" enabled={data.askCustomQuestion} onChange={v => updateField('askCustomQuestion', v)} />
+                    <RuleToggle label="Ask Custom Question" description="Add a custom text field to the form." enabled={data.askCustomQuestion} onChange={v => updateField('askCustomQuestion', v)} />
                     {data.askCustomQuestion && (
                       <div className="pl-4 mt-2 space-y-2 border-l-2 border-indigo-100">
                         <input 
@@ -740,7 +802,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                           value={data.customQuestionLabel}
                           onChange={e => updateField('customQuestionLabel', e.target.value)}
                         />
-                        <RuleToggle label="Required?" enabled={data.customQuestionRequired} onChange={v => updateField('customQuestionRequired', v)} />
+                        <RuleToggle label="Required?" description="Is this question mandatory?" enabled={data.customQuestionRequired} onChange={v => updateField('customQuestionRequired', v)} />
                       </div>
                     )}
                   </div>
@@ -753,14 +815,14 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                   </div>
                   
                   <div className="pt-3">
-                    <RuleToggle label="Require Second Consent" enabled={data.requireSecondConsent} onChange={v => updateField('requireSecondConsent', v)} />
+                    <RuleToggle label="Require Second Consent" description="Add an additional mandatory checkbox." enabled={data.requireSecondConsent} onChange={v => updateField('requireSecondConsent', v)} />
                     {data.requireSecondConsent && (
                       <textarea rows={2} className="w-full mt-2 px-3 py-2 rounded-lg border text-sm" value={data.secondConsentText} onChange={e => updateField('secondConsentText', e.target.value)} placeholder="Additional consent text..." />
                     )}
                   </div>
 
                   <div className="pt-3">
-                    <RuleToggle label="Email Subscription Opt-in" enabled={data.emailOptIn} onChange={v => updateField('emailOptIn', v)} />
+                    <RuleToggle label="Email Subscription Opt-in" description="Show a checkbox to subscribe to marketing emails." enabled={data.emailOptIn} onChange={v => updateField('emailOptIn', v)} />
                     {data.emailOptIn && (
                       <input className="w-full mt-2 px-3 py-2 rounded-lg border text-sm" value={data.emailConsentText} onChange={e => updateField('emailConsentText', e.target.value)} placeholder="Subscribe to emails text..." />
                     )}
@@ -773,9 +835,9 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                 </RuleSection>
 
                 <RuleSection title="Product Settings" icon={Package}>
-                   <RuleToggle label="2x2 Grid View" enabled={data.gridTwoByTwo} onChange={v => updateField('gridTwoByTwo', v)} />
-                   <RuleToggle label="Show Sold Out" enabled={data.showSoldOut} onChange={v => updateField('showSoldOut', v)} />
-                   <RuleToggle label="Hide Inactive" enabled={data.hideInactiveProducts} onChange={v => updateField('hideInactiveProducts', v)} />
+                   <RuleToggle label="2x2 Grid View" description="Display products in a 2-column grid instead of a list." enabled={data.gridTwoByTwo} onChange={v => updateField('gridTwoByTwo', v)} />
+                   <RuleToggle label="Show Sold Out" description="Display out-of-stock items as disabled." enabled={data.showSoldOut} onChange={v => updateField('showSoldOut', v)} />
+                   <RuleToggle label="Hide Inactive" description="Hide products that are archived in Shopify." enabled={data.hideInactiveProducts} onChange={v => updateField('hideInactiveProducts', v)} />
                    
                    <div className="pt-3 border-t border-gray-100">
                      <label className="block text-xs font-semibold text-gray-700 mb-1">Link to Store</label>
@@ -805,6 +867,71 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Restricted Countries</label>
                       <input className="w-full px-3 py-2 rounded-lg border text-sm" placeholder="Russia, North Korea..." value={data.restrictedCountries} onChange={e => updateField('restrictedCountries', e.target.value)} />
                     </div>
+                </RuleSection>
+
+                {/* Order Processing Section (Moved to Bottom) */}
+                <RuleSection title="Order Processing" icon={FileText}>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700">Tag Orders</label>
+                        <div className="group relative flex items-center">
+                          <Info size={12} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+                            Tags added to the Shopify Order for filtering/automation.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <input 
+                        placeholder="e.g. summer-gift" 
+                        className="w-full px-3 py-2 text-sm rounded-lg border" 
+                        value={data.orderTags}
+                        onChange={e => updateField('orderTags', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700">Tag Customers</label>
+                        <div className="group relative flex items-center">
+                          <Info size={12} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
+                            Tags added to the Shopify Customer profile for segmentation.
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <input 
+                        placeholder="e.g. influencer" 
+                        className="w-full px-3 py-2 text-sm rounded-lg border" 
+                        value={data.customerTags}
+                        onChange={e => updateField('customerTags', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Discount Code</label>
+                      <input 
+                        placeholder="INFLUENCER100" 
+                        className="w-full px-3 py-2 text-sm rounded-lg border" 
+                        value={data.discountCode}
+                        onChange={e => updateField('discountCode', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <RuleToggle 
+                      label="Keep Order in Draft" 
+                      description="Requires manual approval in Shopify before fulfilling."
+                      enabled={data.keepDraft} 
+                      onChange={v => updateField('keepDraft', v)} 
+                    />
+                    <RuleToggle 
+                      label="Enable Billing Address" 
+                      description="Collect billing details from influencer (usually not needed)."
+                      enabled={data.enableBilling} 
+                      onChange={v => updateField('enableBilling', v)} 
+                    />
+                  </div>
                 </RuleSection>
               </div>
             )}
