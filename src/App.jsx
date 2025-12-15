@@ -466,7 +466,12 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
 
         <main className="p-8 max-w-6xl mx-auto space-y-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Active Links</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-semibold text-gray-900">Active Links</h3>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                {campaigns.length} / 5 Forms Created
+              </span>
+            </div>
             <div className="flex gap-2">
               <button onClick={handleExport} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-600">
                 <Download size={14} /> Export CSV
@@ -490,7 +495,6 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
                   <tr>
                     <th className="px-6 py-3">Campaign Name</th>
                     <th className="px-6 py-3">Public Link</th>
-                    <th className="px-6 py-3 text-center">Submissions</th>
                     <th className="px-6 py-3">Status</th>
                     <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
@@ -511,9 +515,6 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
                         >
                           gift.app/{c.slug} <ExternalLink size={10} />
                         </a>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-sm font-medium text-gray-900">{c.claims || 0}</span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
