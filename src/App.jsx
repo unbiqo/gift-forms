@@ -28,7 +28,14 @@ import {
   Link as LinkIcon,
   MessageSquare,
   FileText,
-  Tag
+  Tag,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Search,
+  Filter,
+  ArrowUpRight
 } from 'lucide-react';
 
 /**
@@ -112,6 +119,18 @@ const MOCK_PRODUCTS = [
   { id: 'p4', title: 'Ceramic Diffuser', price: 55, image: 'https://images.unsplash.com/photo-1616486029423-aaa478965c97?auto=format&fit=crop&q=80&w=300' },
   { id: 'p5', title: 'Silk Pillowcase', price: 85, image: 'https://images.unsplash.com/photo-1576014131795-d4c3a283033f?auto=format&fit=crop&q=80&w=300' },
   { id: 'p6', title: 'Matcha Kit', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
+];
+
+const MOCK_ORDERS = [
+  { id: 'ord_1', shopifyId: '5968489152595', date: '2025-12-14T11:47:00', influencer: 'Demo Last', handle: '@demo.last', status: 'unfulfilled', campaign: 'Summer Seeding', amount: 2629.95, items: 3, risk: 'low' },
+  { id: 'ord_2', shopifyId: '5968489152596', date: '2025-12-14T12:48:00', influencer: 'Sarah Jenks', handle: '@sarahj', status: 'fulfilled', campaign: 'Summer Seeding', amount: 120.00, items: 1, risk: 'low' },
+  { id: 'ord_3', shopifyId: '5968489152597', date: '2025-12-13T09:30:00', influencer: 'Mike Ross', handle: '@mikeross', status: 'fulfilled', campaign: 'Holiday Gift', amount: 45.00, items: 1, risk: 'low' },
+  { id: 'ord_4', shopifyId: '5968489152598', date: '2025-12-12T15:20:00', influencer: 'Jessica Pearson', handle: '@jpearson', status: 'unfulfilled', campaign: 'Summer Seeding', amount: 650.00, items: 1, risk: 'high' },
+];
+
+const MOCK_DOUBLE_ORDERS = [
+  { id: 'risk_1', date: '2025-12-10T09:21:00', influencer: 'exaw exaw', handle: '@exaw', campaign: 'Agency Partners', items: 1, value: 0 },
+  { id: 'risk_2', date: '2025-08-11T09:38:00', influencer: 'David Letterman', handle: '@letterman', campaign: 'Gifting', items: 1, value: 0 },
 ];
 
 const SHIPPING_ZONES = ["United States", "Canada", "United Kingdom", "Australia", "Germany"];
@@ -444,9 +463,201 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 };
 
 /**
- * --- PAGES: ADMIN DASHBOARD ---
+ * --- PAGES: ORDERS DASHBOARD (NEW) ---
  */
-const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
+const OrdersDashboard = ({ onNavigateDashboard }) => {
+  return (
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
+      <div className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
+        {/* Same Sidebar Navigation for consistency */}
+        <div className="h-16 flex items-center px-6 border-b border-gray-100">
+          <div className="w-6 h-6 bg-indigo-600 rounded-md flex items-center justify-center text-white font-bold text-xs mr-2">A</div>
+          <span className="font-semibold text-gray-900 tracking-tight">Admin</span>
+        </div>
+        <div className="p-4 space-y-1">
+          <button 
+            onClick={onNavigateDashboard}
+            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"
+          >
+            <Home size={18} /> Dashboard
+          </button>
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
+            <Users size={18} /> Influencers
+          </button>
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg">
+            <Package size={18} /> Orders
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
+          <h1 className="text-xl font-bold text-gray-900">Orders</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Last updated: Just now</span>
+          </div>
+        </header>
+
+        <main className="p-8 max-w-7xl mx-auto space-y-8">
+          
+          {/* 1. TOP STATS */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Gifted</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-gray-900">$310,605</span>
+                <span className="text-xs text-green-600 font-medium flex items-center">
+                  <ArrowUpRight size={10} /> 12%
+                </span>
+              </div>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Orders</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-gray-900">259</span>
+              </div>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Forms</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-gray-900">11</span>
+              </div>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending Approval</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-orange-600">2</span>
+                <span className="text-xs text-gray-400">Double orders</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. ACTION CENTER (Double Orders) */}
+          {MOCK_DOUBLE_ORDERS.length > 0 && (
+            <div className="bg-orange-50 border border-orange-100 rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-orange-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Review Required: Double Orders</h3>
+                    <p className="text-xs text-gray-600">These influencers attempted to order more than once.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="divide-y divide-orange-100/50">
+                {MOCK_DOUBLE_ORDERS.map(item => (
+                  <div key={item.id} className="px-6 py-4 flex items-center justify-between hover:bg-orange-50/80 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-white border border-orange-200 flex items-center justify-center text-orange-700 font-bold text-xs shadow-sm">
+                        {item.influencer.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.influencer}</p>
+                        <p className="text-xs text-gray-500">{item.handle} • {new Date(item.date).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-8">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500 uppercase">Campaign</p>
+                        <p className="text-sm font-medium text-gray-900">{item.campaign}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm">
+                          <XCircle size={14} /> Reject
+                        </button>
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-medium hover:bg-gray-800 transition-all shadow-sm">
+                          <CheckCircle size={14} /> Approve
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 3. RECENT ORDERS TABLE */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
+              <div className="flex gap-2">
+                <button className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-600">
+                  <Filter size={14} /> Filter
+                </button>
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-2 text-gray-400" />
+                  <input placeholder="Search orders..." className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48" />
+                </div>
+              </div>
+            </div>
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-medium">
+                <tr>
+                  <th className="px-6 py-3">Order ID</th>
+                  <th className="px-6 py-3">Influencer</th>
+                  <th className="px-6 py-3">Date</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Campaign</th>
+                  <th className="px-6 py-3 text-right">Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {MOCK_ORDERS.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="font-mono text-xs text-indigo-600 hover:underline cursor-pointer">#{order.shopifyId.slice(-4)}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
+                          {order.influencer.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 text-sm">{order.influencer}</div>
+                          <div className="text-xs text-gray-500">{order.handle}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-500">
+                      {new Date(order.date).toLocaleDateString()} <br/>
+                      <span className="text-[10px] opacity-70">{new Date(order.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {order.status === 'fulfilled' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+                          Fulfilled
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-100">
+                          Unfulfilled
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
+                        {order.campaign}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="font-medium text-gray-900 text-sm">${order.amount}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * --- PAGES: ADMIN DASHBOARD (Home) ---
+ */
+const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOrders }) => {
   const handleExport = () => {
     const csv = "Name,Slug,Link,Status,Created\n" + campaigns.map(c => 
       `${c.name},${c.slug},gift.app/${c.slug},active,${c.createdAt}`
@@ -473,7 +684,10 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
           <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
             <Users size={18} /> Influencers
           </button>
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
+          <button 
+            onClick={onViewOrders}
+            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"
+          >
             <Package size={18} /> Orders
           </button>
         </div>
@@ -995,6 +1209,7 @@ const PublicClaimPage = ({ campaign, onBack, onSubmit }) => {
 export default function App() {
   const [route, setRoute] = useState(typeof window !== 'undefined' ? window.location.hash : '');
   const [campaigns, setCampaigns] = useState([]);
+  const [view, setView] = useState('dashboard'); // Control view state manually for non-hash nav
 
   useEffect(() => {
     // Initial Load
@@ -1039,13 +1254,17 @@ export default function App() {
      return <CampaignBuilder onPublish={handlePublish} onCancel={() => window.location.hash = ''} />;
   }
 
+  if (view === 'orders') {
+    return <OrdersDashboard onNavigateDashboard={() => setView('dashboard')} />; // Render the new dashboard
+  }
+
   // Default: Dashboard
   return (
     <DashboardHome 
       campaigns={campaigns} 
       onCreateCampaign={handleCreate} 
       onDeleteCampaign={handleDelete}
-      onViewCampaign={() => {}} // No longer needed as we use <a> tags
+      onViewOrders={() => setView('orders')} // Switch to Orders view
     />
   );
 }
