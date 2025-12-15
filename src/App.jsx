@@ -24,14 +24,15 @@ import {
   MapPin,
   Trash2,
   ExternalLink,
-  Download
+  Download,
+  Link as LinkIcon,
+  MessageSquare
 } from 'lucide-react';
 
 /**
- * --- UTILITIES & HELPERS (Inlined for Single-File Reliability) ---
+ * --- UTILITIES & HELPERS ---
  */
 
-// 1. Slug Generator
 const generateSlug = (name) => {
   const base = name
     .toLowerCase()
@@ -42,7 +43,6 @@ const generateSlug = (name) => {
   return `${base}-${Math.random().toString(36).substring(2, 6)}`;
 };
 
-// 2. Storage Helper (Safe LocalStorage)
 const STORAGE_KEY = 'campaign_mvp_data';
 const db = {
   get: () => {
@@ -82,10 +82,18 @@ const db = {
     const updated = current.filter(c => c.id !== id);
     db.save(updated);
     return updated;
+  },
+  incrementClaims: (id) => {
+    const current = db.get();
+    const updated = current.map(c => 
+      c.id === id ? { ...c, claims: (c.claims || 0) + 1 } : c
+    );
+    db.save(updated);
+    return updated;
   }
 };
 
-// 3. Form Sanitizers
+// Form Sanitizers
 const sanitizeName = (val) => val.replace(/[^a-zA-Z\s'-]/g, '').slice(0, 40);
 const sanitizeEmail = (val) => val.replace(/[^\w.@+-]/g, '').slice(0, 60);
 const sanitizeHandle = (val) => {
@@ -94,7 +102,7 @@ const sanitizeHandle = (val) => {
 };
 const sanitizePhone = (val) => val.replace(/\D/g, '').slice(0, 15);
 
-// 4. Mock Data
+// Mock Data
 const MOCK_PRODUCTS = [
   { id: 'p1', title: 'Vintage Leather Jacket', price: 650, image: 'https://images.unsplash.com/photo-1551028919-ac669d6301dd?auto=format&fit=crop&q=80&w=300' },
   { id: 'p2', title: 'Performance Energy Drink', price: 45, image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=300' },
@@ -151,14 +159,15 @@ const RuleToggle = ({ label, description, enabled, onChange }) => (
 
 /**
  * --- CLAIM EXPERIENCE COMPONENT ---
- * (Used in both Live Preview AND the Standalone Page)
  */
-const ClaimExperience = ({ campaign, products, isPreview = false }) => {
-  const [step, setStep] = useState('selection'); // selection | details | success
+const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) => {
+  const [step, setStep] = useState('selection');
   const [selectedIds, setSelectedIds] = useState([]);
-  const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', address: '' });
+  const [formData, setFormData] = useState({ 
+    firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', address: '',
+    customAnswer: '' 
+  });
   
-  // Filter products based on campaign selection
   const availableProducts = useMemo(() => {
     return products.filter(p => campaign.selectedProductIds.includes(p.id));
   }, [products, campaign]);
@@ -167,14 +176,14 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
     if (selectedIds.includes(id)) {
       setSelectedIds(prev => prev.filter(pid => pid !== id));
     } else {
-      if (selectedIds.length >= campaign.itemLimit) return; // Limit check
+      if (selectedIds.length >= campaign.itemLimit) return;
       setSelectedIds(prev => [...prev, id]);
     }
   };
 
   const handleClaim = () => {
-    if (isPreview) return; // Don't actually submit in preview
-    // In real app: API call here
+    if (isPreview) return;
+    if (onSubmit) onSubmit(campaign.id);
     setStep('success');
   };
 
@@ -186,6 +195,17 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Order Confirmed!</h2>
         <p className="text-gray-500 text-sm">Your gifts are on the way. Check your email for tracking.</p>
+        
+        {campaign.linkToStore && (
+          <a 
+            href={`https://${campaign.linkToStore}`} 
+            target="_blank" 
+            rel="noreferrer"
+            className="mt-8 text-indigo-600 text-sm font-medium hover:underline flex items-center gap-1"
+          >
+            {campaign.linkText || 'Visit our Store'} <ExternalLink size={14} />
+          </a>
+        )}
       </div>
     );
   }
@@ -216,7 +236,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
                No products available.
              </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid gap-3 ${campaign.gridTwoByTwo ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {availableProducts.map(p => {
                 const isSelected = selectedIds.includes(p.id);
                 return (
@@ -294,7 +314,6 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
           onChange={e => setFormData(prev => ({...prev, email: sanitizeEmail(e.target.value)}))}
         />
         
-        {/* Conditional Fields based on Campaign Rules */}
         {campaign.requirePhone && (
           <input 
             placeholder="Phone number" 
@@ -326,6 +345,22 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
           </div>
         )}
 
+        {/* Custom Question */}
+        {campaign.askCustomQuestion && (
+          <div className="pt-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              {campaign.customQuestionLabel || 'Additional Question'}
+              {campaign.customQuestionRequired && <span className="text-red-500 ml-1">*</span>}
+            </label>
+            <input 
+              placeholder="Your answer..." 
+              className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={formData.customAnswer}
+              onChange={e => setFormData(prev => ({...prev, customAnswer: e.target.value}))}
+            />
+          </div>
+        )}
+
         <div className="pt-2">
           <label className="block text-xs font-medium text-gray-500 mb-1">Shipping Address</label>
           <div className="relative">
@@ -339,14 +374,37 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
           </div>
         </div>
 
-        {campaign.showConsentCheckbox && (
-          <label className="flex gap-3 items-start pt-2 cursor-pointer group">
-            <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-            <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
-              {campaign.termsConsentText || "I agree to the terms and conditions."}
-            </span>
-          </label>
-        )}
+        <div className="space-y-3 pt-2">
+          {/* Main Consent */}
+          {campaign.showConsentCheckbox && (
+            <label className="flex gap-3 items-start cursor-pointer group">
+              <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
+                {campaign.termsConsentText || "I agree to the terms and conditions."}
+              </span>
+            </label>
+          )}
+
+          {/* Second Consent */}
+          {campaign.requireSecondConsent && (
+            <label className="flex gap-3 items-start cursor-pointer group">
+              <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
+                {campaign.secondConsentText || "Additional consent required."}
+              </span>
+            </label>
+          )}
+
+          {/* Email Opt-in */}
+          {campaign.emailOptIn && (
+            <label className="flex gap-3 items-start cursor-pointer group">
+              <input type="checkbox" defaultChecked className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
+                {campaign.emailConsentText || "Subscribe to email updates"}
+              </span>
+            </label>
+          )}
+        </div>
       </div>
 
       <div className="p-4 border-t border-gray-100">
@@ -355,7 +413,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false }) => {
           className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg"
           style={{ backgroundColor: campaign.brandColor }}
         >
-          Confirm & Ship
+          {campaign.submitButtonText || 'Confirm & Ship'}
         </button>
       </div>
     </div>
@@ -432,6 +490,7 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewCa
                   <tr>
                     <th className="px-6 py-3">Campaign Name</th>
                     <th className="px-6 py-3">Public Link</th>
+                    <th className="px-6 py-3 text-center">Submissions</th>
                     <th className="px-6 py-3">Status</th>
                     <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
@@ -451,6 +510,9 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewCa
                           gift.app/{c.slug} <ExternalLink size={10} />
                         </button>
                       </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="text-sm font-medium text-gray-900">{c.claims || 0}</span>
+                      </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Active
@@ -460,7 +522,6 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewCa
                         <button 
                           onClick={() => {
                              navigator.clipboard.writeText(`gift.app/${c.slug}`);
-                             // In real app show toast
                           }}
                           className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md"
                           title="Copy Link"
@@ -504,14 +565,36 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
     itemLimit: 1,
     shippingZone: 'United States',
     restrictedCountries: '',
+    
+    // Limits
+    orderLimitPerLink: '',
+    maxCartValue: '',
+    blockDuplicateOrders: false,
+
+    // Contact
     showPhoneField: false,
     showInstagramField: true,
     showTiktokField: false,
-    showConsentCheckbox: true,
-    termsConsentText: '',
+    askCustomQuestion: false,
+    customQuestionLabel: '',
+    customQuestionRequired: false,
+
+    // Product Settings
     showSoldOut: true,
     hideInactiveProducts: true,
     allowQuantitySelector: false,
+    linkToStore: '',
+    linkText: '',
+    gridTwoByTwo: true,
+
+    // Content & Consent
+    showConsentCheckbox: true,
+    termsConsentText: '',
+    requireSecondConsent: false,
+    secondConsentText: '',
+    emailOptIn: true,
+    emailConsentText: '',
+    submitButtonText: '',
   });
 
   const updateField = (field, val) => setData(p => ({ ...p, [field]: val }));
@@ -625,13 +708,81 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Item Limit</label>
                       <input type="number" min="1" max="10" value={data.itemLimit} onChange={e => updateField('itemLimit', parseInt(e.target.value))} className="w-full px-3 py-2 rounded-lg border" />
                     </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Order Limit per Link</label>
+                      <input type="number" value={data.orderLimitPerLink} onChange={e => updateField('orderLimitPerLink', e.target.value)} placeholder="Unlimited" className="w-full px-3 py-2 rounded-lg border" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Max Cart Value ($)</label>
+                      <input type="number" value={data.maxCartValue} onChange={e => updateField('maxCartValue', e.target.value)} placeholder="No Limit" className="w-full px-3 py-2 rounded-lg border" />
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <RuleToggle label="Block Duplicate Orders" enabled={data.blockDuplicateOrders} onChange={v => updateField('blockDuplicateOrders', v)} />
                   </div>
                 </RuleSection>
+
                 <RuleSection title="Contact Fields" icon={Users}>
                   <RuleToggle label="Show Phone Field" enabled={data.requirePhone} onChange={v => updateField('requirePhone', v)} />
                   <RuleToggle label="Show Instagram" enabled={data.showInstagramField} onChange={v => updateField('showInstagramField', v)} />
                   <RuleToggle label="Show TikTok" enabled={data.showTiktokField} onChange={v => updateField('showTiktokField', v)} />
+                  
+                  <div className="pt-2 border-t border-gray-100">
+                    <RuleToggle label="Ask Custom Question" enabled={data.askCustomQuestion} onChange={v => updateField('askCustomQuestion', v)} />
+                    {data.askCustomQuestion && (
+                      <div className="pl-4 mt-2 space-y-2 border-l-2 border-indigo-100">
+                        <input 
+                          placeholder="e.g. What is your shirt size?" 
+                          className="w-full px-3 py-2 text-sm rounded-lg border" 
+                          value={data.customQuestionLabel}
+                          onChange={e => updateField('customQuestionLabel', e.target.value)}
+                        />
+                        <RuleToggle label="Required?" enabled={data.customQuestionRequired} onChange={v => updateField('customQuestionRequired', v)} />
+                      </div>
+                    )}
+                  </div>
                 </RuleSection>
+
+                <RuleSection title="Content & Consent" icon={Shield}>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Terms Consent Text</label>
+                    <textarea rows={2} className="w-full px-3 py-2 rounded-lg border text-sm" value={data.termsConsentText} onChange={e => updateField('termsConsentText', e.target.value)} placeholder="I consent to..." />
+                  </div>
+                  
+                  <div className="pt-3">
+                    <RuleToggle label="Require Second Consent" enabled={data.requireSecondConsent} onChange={v => updateField('requireSecondConsent', v)} />
+                    {data.requireSecondConsent && (
+                      <textarea rows={2} className="w-full mt-2 px-3 py-2 rounded-lg border text-sm" value={data.secondConsentText} onChange={e => updateField('secondConsentText', e.target.value)} placeholder="Additional consent text..." />
+                    )}
+                  </div>
+
+                  <div className="pt-3">
+                    <RuleToggle label="Email Subscription Opt-in" enabled={data.emailOptIn} onChange={v => updateField('emailOptIn', v)} />
+                    {data.emailOptIn && (
+                      <input className="w-full mt-2 px-3 py-2 rounded-lg border text-sm" value={data.emailConsentText} onChange={e => updateField('emailConsentText', e.target.value)} placeholder="Subscribe to emails text..." />
+                    )}
+                  </div>
+
+                  <div className="pt-3">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Submit Button Text</label>
+                    <input className="w-full px-3 py-2 rounded-lg border text-sm" value={data.submitButtonText} onChange={e => updateField('submitButtonText', e.target.value)} placeholder="Confirm & Ship" />
+                  </div>
+                </RuleSection>
+
+                <RuleSection title="Product Settings" icon={Package}>
+                   <RuleToggle label="2x2 Grid View" enabled={data.gridTwoByTwo} onChange={v => updateField('gridTwoByTwo', v)} />
+                   <RuleToggle label="Show Sold Out" enabled={data.showSoldOut} onChange={v => updateField('showSoldOut', v)} />
+                   <RuleToggle label="Hide Inactive" enabled={data.hideInactiveProducts} onChange={v => updateField('hideInactiveProducts', v)} />
+                   
+                   <div className="pt-3 border-t border-gray-100">
+                     <label className="block text-xs font-semibold text-gray-700 mb-1">Link to Store</label>
+                     <div className="grid grid-cols-2 gap-2">
+                        <input className="px-3 py-2 rounded-lg border text-sm" placeholder="myshop.com" value={data.linkToStore} onChange={e => updateField('linkToStore', e.target.value)} />
+                        <input className="px-3 py-2 rounded-lg border text-sm" placeholder="Link Text" value={data.linkText} onChange={e => updateField('linkText', e.target.value)} />
+                     </div>
+                   </div>
+                </RuleSection>
+
                 <RuleSection title="Shipping" icon={Globe}>
                    <div className="relative">
                       <select 
@@ -646,6 +797,10 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                       <div className="absolute right-3 top-2.5 pointer-events-none text-gray-500">
                         <ChevronRight size={14} className="rotate-90" />
                       </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Restricted Countries</label>
+                      <input className="w-full px-3 py-2 rounded-lg border text-sm" placeholder="Russia, North Korea..." value={data.restrictedCountries} onChange={e => updateField('restrictedCountries', e.target.value)} />
                     </div>
                 </RuleSection>
               </div>
@@ -685,7 +840,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
 /**
  * --- PAGES: PUBLIC CLAIM FORM (Standalone) ---
  */
-const PublicClaimPage = ({ campaign, onBack }) => {
+const PublicClaimPage = ({ campaign, onBack, onSubmit }) => {
   if (!campaign) return <div>Campaign not found</div>;
 
   return (
@@ -698,7 +853,7 @@ const PublicClaimPage = ({ campaign, onBack }) => {
         >
           <ChevronRight size={16} />
         </button>
-        <ClaimExperience campaign={campaign} products={MOCK_PRODUCTS} isPreview={false} />
+        <ClaimExperience campaign={campaign} products={MOCK_PRODUCTS} isPreview={false} onSubmit={onSubmit} />
       </div>
     </div>
   );
@@ -738,12 +893,23 @@ export default function App() {
     setView('claim');
   };
 
+  const handleClaimSubmission = (campaignId) => {
+    const updated = db.incrementClaims(campaignId);
+    setCampaigns(updated);
+  };
+
   if (view === 'create') {
     return <CampaignBuilder onPublish={handlePublish} onCancel={() => setView('dashboard')} />;
   }
 
   if (view === 'claim' && activeCampaign) {
-    return <PublicClaimPage campaign={activeCampaign} onBack={() => setView('dashboard')} />;
+    return (
+      <PublicClaimPage 
+        campaign={activeCampaign} 
+        onBack={() => setView('dashboard')} 
+        onSubmit={handleClaimSubmission}
+      />
+    );
   }
 
   return (
