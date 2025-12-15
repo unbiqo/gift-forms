@@ -423,7 +423,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 /**
  * --- PAGES: ADMIN DASHBOARD ---
  */
-const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewCampaign }) => {
+const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign }) => {
   const handleExport = () => {
     const csv = "Name,Slug,Link,Status,Created\n" + campaigns.map(c => 
       `${c.name},${c.slug},gift.app/${c.slug},active,${c.createdAt}`
@@ -503,12 +503,14 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewCa
                         <div className="text-xs text-gray-500">{new Date(c.createdAt).toLocaleDateString()}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <button 
-                          onClick={() => onViewCampaign(c)}
-                          className="flex items-center gap-2 text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                        <a 
+                          href={`#claim/${c.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
                         >
                           gift.app/{c.slug} <ExternalLink size={10} />
-                        </button>
+                        </a>
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span className="text-sm font-medium text-gray-900">{c.claims || 0}</span>
@@ -863,22 +865,27 @@ const PublicClaimPage = ({ campaign, onBack, onSubmit }) => {
  * --- MAIN APP ORCHESTRATOR ---
  */
 export default function App() {
-  const [view, setView] = useState('dashboard'); // dashboard | create | claim
+  const [route, setRoute] = useState(typeof window !== 'undefined' ? window.location.hash : '');
   const [campaigns, setCampaigns] = useState([]);
-  const [activeCampaign, setActiveCampaign] = useState(null);
 
-  // Load from storage on mount
   useEffect(() => {
-    const saved = db.get();
-    if (saved) setCampaigns(saved);
+    // Initial Load
+    setCampaigns(db.get());
+
+    // Hash Listener
+    const onHashChange = () => setRoute(window.location.hash);
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const handleCreate = () => setView('create');
+  const handleCreate = () => {
+    window.location.hash = '#create';
+  };
   
   const handlePublish = (data) => {
     const newCampaign = db.add(data);
     setCampaigns(prev => [newCampaign, ...prev]);
-    setView('dashboard');
+    window.location.hash = ''; // Back to dashboard
   };
 
   const handleDelete = (id) => {
@@ -888,36 +895,29 @@ export default function App() {
     }
   };
 
-  const handleView = (campaign) => {
-    setActiveCampaign(campaign);
-    setView('claim');
-  };
-
   const handleClaimSubmission = (campaignId) => {
     const updated = db.incrementClaims(campaignId);
     setCampaigns(updated);
   };
 
-  if (view === 'create') {
-    return <CampaignBuilder onPublish={handlePublish} onCancel={() => setView('dashboard')} />;
+  // Router Switch
+  if (route.startsWith('#claim/')) {
+    const slug = route.split('#claim/')[1];
+    const campaign = campaigns.find(c => c.slug === slug);
+    return <PublicClaimPage campaign={campaign} onBack={() => window.location.hash = ''} onSubmit={handleClaimSubmission} />;
+  }
+  
+  if (route === '#create') {
+     return <CampaignBuilder onPublish={handlePublish} onCancel={() => window.location.hash = ''} />;
   }
 
-  if (view === 'claim' && activeCampaign) {
-    return (
-      <PublicClaimPage 
-        campaign={activeCampaign} 
-        onBack={() => setView('dashboard')} 
-        onSubmit={handleClaimSubmission}
-      />
-    );
-  }
-
+  // Default: Dashboard
   return (
     <DashboardHome 
       campaigns={campaigns} 
       onCreateCampaign={handleCreate} 
       onDeleteCampaign={handleDelete}
-      onViewCampaign={handleView}
+      onViewCampaign={() => {}} // No longer needed as we use <a> tags
     />
   );
 }
