@@ -6,7 +6,7 @@ import {
   Loader2, Shield, MapPin, ShoppingCart, DollarSign, Globe, FileText,
   Signal, Wifi, Battery
 } from 'lucide-react';
-
+import { googleAddressService } from './services/googleAddressService';
 /**
  * ==========================================
  * SECTION 1: SUPABASE CLIENT (MOCKED FOR PREVIEW)
@@ -24,28 +24,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL, 
   import.meta.env.VITE_SUPABASE_KEY
 );
-/**
- * ==========================================
- * SECTION 2: ADDRESS SERVICE
- * (Move to src/services/shopifyAddressService.js locally)
- * ==========================================
- */
-const MOCK_ADDRESSES = [
-  { id: 'addr_1', label: '200 University Ave W, Waterloo, ON, Canada' },
-  { id: 'addr_2', label: '33 New Montgomery St, San Francisco, CA 94105, USA' },
-  { id: 'addr_3', label: '1 Martin Place, Sydney NSW 2000, Australia' },
-  { id: 'addr_4', label: '101 Collins St, Melbourne VIC 3000, Australia' },
-];
-
-const shopifyAddressService = {
-  async searchAddresses(query) {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return [];
-    // Simulate API delay
-    await new Promise(r => setTimeout(r, 150));
-    return MOCK_ADDRESSES.filter(addr => addr.label.toLowerCase().includes(normalized));
-  },
-};
 
 /**
  * ==========================================
@@ -270,19 +248,28 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const [formData, setFormData] = useState({ 
     firstName: '', lastName: '', email: '', phone: '', instagram: '', address: '' 
   });
+  
+  // NEW: Store clean address data from Google (Zip, City, Country)
+  const [structuredAddress, setStructuredAddress] = useState(null);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   
-  // Real Address Search State
+  // Address Search State
   const [addressQuery, setAddressQuery] = useState('');
   const [addressSuggestions, setAddressSuggestions] = useState([]);
 
-  // Address Search Handler
+  // Address Search Handler (Google API)
   useEffect(() => {
     if (addressQuery.length > 2) {
       const timeoutId = setTimeout(async () => {
-        const results = await shopifyAddressService.searchAddresses(addressQuery);
-        setAddressSuggestions(results);
+        try {
+          // CHANGED: Use real Google service
+          const results = await googleAddressService.searchAddresses(addressQuery);
+          setAddressSuggestions(results);
+        } catch (e) {
+          console.error("Google Maps Error", e);
+        }
       }, 300);
       return () => clearTimeout(timeoutId);
     } else {
@@ -295,12 +282,43 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
     return products.filter(p => campaign.selectedProductIds?.includes(p.id));
   }, [products, campaign]);
 
+  // RULE: Enforce Item Limit
   const toggleSelection = (id) => {
     if (selectedIds.includes(id)) {
       setSelectedIds(prev => prev.filter(pid => pid !== id));
     } else {
-      if (selectedIds.length >= (campaign.itemLimit || 1)) return;
+      const limit = campaign.itemLimit || 1;
+      if (selectedIds.length >= limit) {
+        // Optional: You could show a toast here like "You can only choose 1 item"
+        return; 
+      }
       setSelectedIds(prev => [...prev, id]);
+    }
+  };
+
+  // RULE: Handle Address Selection & Country Validation
+  const handleAddressSelect = async (addr) => {
+    // UI Updates
+    setFormData(p => ({...p, address: addr.label}));
+    setAddressQuery(addr.label);
+    setAddressSuggestions([]);
+    setError(null);
+
+    if (isPreview) return;
+
+    try {
+      // Fetch details (Zip, City, Country)
+      const details = await googleAddressService.getPlaceDetails(addr.id);
+      setStructuredAddress(details);
+      
+      // VALIDATION: Check Shipping Zone
+      // Example: If campaign is "United States" but user picked "Canada"
+      if (campaign.shippingZone && campaign.shippingZone !== 'World' && details.country !== campaign.shippingZone) {
+        setError(`Sorry, this campaign is only available in ${campaign.shippingZone}.`);
+        setStructuredAddress(null); // Invalid address
+      }
+    } catch (e) {
+      console.error("Failed to get address details", e);
     }
   };
 
@@ -311,12 +329,15 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 
     try {
       if (!formData.email || !formData.address) throw new Error("Email and Address are required.");
+      if (error) throw new Error("Please fix the errors before continuing.");
 
       const selectedItems = products.filter(p => selectedIds.includes(p.id));
+      
       const orderPayload = {
         campaignId: campaign.id,
         items: selectedItems,
-        ...formData
+        ...formData,
+        shippingDetails: structuredAddress // Save the clean data
       };
 
       // Call the REAL Service
@@ -326,7 +347,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       setStep('success');
     } catch (err) {
       console.error(err);
-      setError("Failed to submit order. Please try again.");
+      setError(err.message || "Failed to submit order.");
     } finally {
       setIsSubmitting(false);
     }
@@ -369,11 +390,15 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             <div className={`grid gap-3 ${campaign.gridTwoByTwo ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {availableProducts.map(p => {
                 const isSelected = selectedIds.includes(p.id);
+                // Visual feedback if disabled (limit reached and not selected)
+                const isLimitReached = selectedIds.length >= (campaign.itemLimit || 1);
+                const isDisabled = isLimitReached && !isSelected;
+
                 return (
                   <div 
                     key={p.id} 
                     onClick={() => toggleSelection(p.id)}
-                    className={`group relative cursor-pointer transition-all ${isSelected ? 'ring-2 ring-offset-2' : ''}`}
+                    className={`group relative cursor-pointer transition-all ${isSelected ? 'ring-2 ring-offset-2' : ''} ${isDisabled ? 'opacity-50' : ''}`}
                     style={{ ringColor: isSelected ? campaign.brandColor : 'transparent' }}
                   >
                     <div className="aspect-[3/4] bg-gray-100 rounded-xl overflow-hidden mb-2 relative">
@@ -450,6 +475,8 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
               onChange={e => {
                 setAddressQuery(e.target.value);
                 setFormData(p => ({...p, address: e.target.value}));
+                // Reset structured data if user types manually
+                if (structuredAddress) setStructuredAddress(null);
               }}
             />
             {addressSuggestions.length > 0 && (
@@ -458,11 +485,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                   <div 
                     key={addr.id}
                     className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                    onClick={() => {
-                      setFormData(p => ({...p, address: addr.label}));
-                      setAddressQuery(addr.label);
-                      setAddressSuggestions([]);
-                    }}
+                    onClick={() => handleAddressSelect(addr)} // CHANGED to new handler
                   >
                     {addr.label}
                   </div>
@@ -475,8 +498,8 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       <div className="p-4 border-t border-gray-100">
         <button
           onClick={handleClaim}
-          disabled={isSubmitting}
-          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2"
+          disabled={isSubmitting || !!error}
+          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: campaign.brandColor }}
         >
           {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : (campaign.submitButtonText || 'Confirm & Ship')}
@@ -700,11 +723,24 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
 
   const handlePublish = async () => {
     setIsSaving(true);
-    const slug = data.slug.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-');
+    
+    // 1. Generate a base slug from the CURRENT name
+    const baseSlug = data.name.toLowerCase().trim()
+      .replace(/[^\w\s-]/g, '') // Remove special chars
+      .replace(/[\s_-]+/g, '-'); // Replace spaces with dashes
+
+    // 2. Append a random timestamp to GUARANTEE uniqueness
+    // Example: "summer-seeding-1715629"
+    const uniqueSlug = `${baseSlug}-${Date.now().toString().slice(-6)}`;
     
     try {
-      await campaignService.createCampaign({ ...data, slug });
-      onPublish(); // Trigger refresh
+      // 3. Send the uniqueSlug instead of data.slug
+      await campaignService.createCampaign({ 
+        ...data, 
+        slug: uniqueSlug 
+      });
+      
+      onPublish(); 
     } catch (e) {
       console.error("Failed to publish", e);
       alert(`Error publishing campaign: ${e.message || "Unknown error"}. Check console.`);
