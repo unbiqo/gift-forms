@@ -1,198 +1,25 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   Layout, Package, Palette, Settings, ChevronRight, ChevronLeft,
   Info, Plus, Home, Users, Copy, ExternalLink, Download,
   AlertTriangle, CheckCircle, XCircle, Search, Filter,
   Loader2, Shield, MapPin, ShoppingCart, DollarSign, Globe, FileText,
-  Signal, Wifi, Battery
+  Signal, Wifi, Battery, RefreshCw
 } from 'lucide-react';
 import { googleAddressService } from './services/googleAddressService';
-/**
- * ==========================================
- * SECTION 1: SUPABASE CLIENT (MOCKED FOR PREVIEW)
- * * NOTE FOR LOCAL DEVELOPMENT:
- * 1. Run `npm install @supabase/supabase-js`
- * 2. Uncomment the import below
- * 3. Replace the MockClient with the real createClient
- * ==========================================
- */
-
-import { createClient } from '@supabase/supabase-js'; // <--- UNCOMMENT THIS LOCALLY
-
-// --- INITIALIZE CLIENT ---
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL, 
-  import.meta.env.VITE_SUPABASE_KEY
-);
-
-/**
- * ==========================================
- * SECTION 3: CAMPAIGN SERVICE (Logic)
- * (Move to src/services/campaignService.js locally)
- * ==========================================
- */
-const PRODUCT_CATALOG = [
-  { id: 'p1', title: 'Vintage Leather Jacket', price: 650, image: 'https://images.unsplash.com/photo-1551028919-ac669d6301dd?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p2', title: 'Performance Energy Drink', price: 45, image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p3', title: 'Hydrating Face Cream', price: 120, image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p4', title: 'Ceramic Diffuser', price: 55, image: 'https://images.unsplash.com/photo-1616486029423-aaa478965c97?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p5', title: 'Silk Pillowcase', price: 85, image: 'https://images.unsplash.com/photo-1576014131795-d4c3a283033f?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p6', title: 'Matcha Kit (Sold Out)', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
-];
-
-const campaignService = {
-  // INFLUENCER VIEW: Fetch a campaign by its public link (slug)
-  async getCampaignBySlug(slug) {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select('*')
-      .eq('slug', slug)
-      .eq('status', 'active')
-      .single();
-
-    if (error) {
-      console.error('Error fetching campaign:', error);
-      return null;
-    }
-
-    // Convert snake_case DB columns to camelCase for the React App
-    return {
-      id: data.id,
-      name: data.name,
-      slug: data.slug,
-      welcomeMessage: data.welcome_message,
-      brandColor: data.brand_color,
-      selectedProductIds: data.selected_product_ids || [], 
-      itemLimit: data.item_limit,
-      orderLimitPerLink: data.order_limit_per_link,
-      maxCartValue: data.max_cart_value,
-      shippingZone: data.shipping_zone,
-      restrictedCountries: data.restricted_countries,
-      showPhoneField: data.show_phone_field,
-      showInstagramField: data.show_instagram_field,
-      showTiktokField: data.show_tiktok_field,
-      askCustomQuestion: data.ask_custom_question,
-      customQuestionLabel: data.custom_question_label,
-      customQuestionRequired: data.custom_question_required,
-      termsConsentText: data.terms_consent_text,
-      showConsentCheckbox: data.show_consent_checkbox,
-      requireSecondConsent: data.require_second_consent,
-      secondConsentText: data.second_consent_text,
-      emailOptIn: data.email_opt_in,
-      emailConsentText: data.email_consent_text,
-      submitButtonText: data.submit_button_text,
-      gridTwoByTwo: true,
-      showSoldOut: true,
-      linkToStore: data.link_to_store,
-      linkText: data.link_text
-    };
-  },
-
-  // ADMIN DASHBOARD: Fetch all campaigns
-  async getAllCampaigns() {
-    // Note: The mock .order() implementation returns a thenable, so await works
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .neq('status', 'archived');
-    
-    if (error) {
-      console.error('Error fetching campaigns:', error);
-      return [];
-    }
-    return data;
-  },
-
-  // ADMIN BUILDER: Create a new campaign
-  async createCampaign(campaignData) {
-    const payload = {
-      name: campaignData.name,
-      slug: campaignData.slug,
-      welcome_message: campaignData.welcomeMessage,
-      brand_color: campaignData.brandColor,
-      selected_product_ids: campaignData.selectedProductIds,
-      item_limit: campaignData.itemLimit || 1,
-      order_limit_per_link: campaignData.orderLimitPerLink ? parseInt(campaignData.orderLimitPerLink) : null,
-      max_cart_value: campaignData.maxCartValue ? parseFloat(campaignData.maxCartValue) : null,
-      block_duplicate_orders: campaignData.blockDuplicateOrders,
-      shipping_zone: campaignData.shippingZone,
-      restricted_countries: campaignData.restrictedCountries,
-      show_phone_field: campaignData.requirePhone,
-      show_instagram_field: campaignData.showInstagramField,
-      show_tiktok_field: campaignData.showTiktokField,
-      ask_custom_question: campaignData.askCustomQuestion,
-      custom_question_label: campaignData.customQuestionLabel,
-      custom_question_required: campaignData.customQuestionRequired,
-      show_consent_checkbox: campaignData.showConsentCheckbox,
-      terms_consent_text: campaignData.termsConsentText,
-      require_second_consent: campaignData.requireSecondConsent,
-      second_consent_text: campaignData.secondConsentText,
-      email_opt_in: campaignData.emailOptIn,
-      email_consent_text: campaignData.emailConsentText,
-      submit_button_text: campaignData.submitButtonText,
-      link_to_store: campaignData.linkToStore,
-      link_text: campaignData.linkText,
-      status: 'active',
-      claims_count: 0
-    };
-
-    const { data, error } = await supabase
-      .from('campaigns')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  // INFLUENCER ACTION: Submit an order
-  async createOrder(orderData) {
-    const { campaignId, items, ...customerInfo } = orderData;
-
-    const payload = {
-      campaign_id: campaignId,
-      influencer_email: customerInfo.email,
-      influencer_name: `${customerInfo.firstName} ${customerInfo.lastName}`,
-      influencer_handle: customerInfo.instagram || customerInfo.tiktok || '',
-      shipping_address: customerInfo.address,
-      items: items, 
-      status: 'pending',
-      created_at: new Date().toISOString()
-    };
-
-    const { data, error } = await supabase
-      .from('orders')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  // ADMIN DASHBOARD: Soft-delete a campaign by updating its status
-  async deleteCampaign(id) {
-    const { error } = await supabase
-      .from('campaigns')
-      .update({ status: 'archived' })
-      .eq('id', id);
-
-    if (error) throw error;
-    return { id };
-  },
-
-  getProducts() {
-    return PRODUCT_CATALOG;
-  }
-};
+import { orderService } from './services/orderService';
+import { campaignService } from './services/campaignService';
 
 const AnalyticsService = {
-  calculateStats: (orders) => {
-    const totalValue = orders.reduce((acc, ord) => acc + (ord.amount || 0), 0);
+  calculateStats: (orders = []) => {
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return { totalValue: 0, totalOrders: 0, fulfilled: 0, pending: 0 };
+    }
+
+    const totalValue = orders.reduce((acc, ord) => acc + (ord.value || ord.amount || 0), 0);
     const fulfilled = orders.filter(o => o.status === 'fulfilled').length;
-    const pending = orders.filter(o => o.status === 'unfulfilled').length;
+    const pending = orders.length - fulfilled;
+
     return { totalValue, totalOrders: orders.length, fulfilled, pending };
   }
 };
@@ -202,12 +29,6 @@ const AnalyticsService = {
  * SECTION 4: UI COMPONENTS & APP
  * ==========================================
  */
-
-// --- MOCK DATA FOR ORDERS (Since we don't have real orders yet) ---
-const MOCK_ORDERS = [
-  { id: 'ord_1', shopifyId: '5968489152595', date: '2025-12-14T11:47:00', influencer: 'Demo Last', handle: '@demo.last', status: 'unfulfilled', campaign: 'Summer Seeding', amount: 2629.95, items: 3, risk: 'low' },
-  { id: 'ord_2', shopifyId: '5968489152596', date: '2025-12-14T12:48:00', influencer: 'Sarah Jenks', handle: '@sarahj', status: 'fulfilled', campaign: 'Summer Seeding', amount: 120.00, items: 1, risk: 'low' },
-];
 
 const SHIPPING_ZONES = ["United States", "Canada", "United Kingdom", "Australia", "Germany"];
 
@@ -523,7 +344,118 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 
 /* --- ORDERS DASHBOARD (Improved with AnalyticsService) --- */
 const OrdersDashboard = ({ onNavigateDashboard }) => {
-  const stats = useMemo(() => AnalyticsService.calculateStats(MOCK_ORDERS), []);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+
+  const stats = useMemo(() => AnalyticsService.calculateStats(orders), [orders]);
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }), []);
+  const currencyFormatter = useMemo(() => new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0
+  }), []);
+
+  const fetchOrders = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const liveOrders = await orderService.listOrders({ limit: 100 });
+      setOrders(liveOrders);
+    } catch (err) {
+      console.error('Unable to load orders from Supabase', err);
+      setError('Unable to load orders right now. Please try again in a moment.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return '—';
+    return currencyFormatter.format(value);
+  };
+
+  const formatDate = (value) => {
+    if (!value) return '—';
+    try {
+      return dateFormatter.format(new Date(value));
+    } catch {
+      return value;
+    }
+  };
+
+  const renderStatusBadge = (status) => {
+    const normalized = status || 'pending';
+    const isFulfilled = normalized === 'fulfilled';
+    return (
+      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+        isFulfilled ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'
+      }`}>
+        {normalized}
+      </span>
+    );
+  };
+
+  const tableState = () => {
+    if (loading) {
+      return (
+        <tr>
+          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={5}>
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 size={16} className="animate-spin text-indigo-600" />
+              <span>Loading orders from Supabase…</span>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    if (orders.length === 0) {
+      return (
+        <tr>
+          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={5}>
+            No orders yet. Share a claim link to see activity here.
+          </td>
+        </tr>
+      );
+    }
+
+    return orders.map((order) => {
+      const orderId = order.shopifyOrderNumber || order.shopifyOrderId || order.id;
+      return (
+        <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+          <td className="px-6 py-4">
+            <div className="font-mono text-xs text-indigo-600">#{orderId ? orderId.slice(-6) : '—'}</div>
+            <div className="text-xs text-gray-500">{formatDate(order.createdAt)}</div>
+          </td>
+          <td className="px-6 py-4">
+            <div className="font-medium text-gray-900 text-sm">{order.influencerName || 'Unnamed Influencer'}</div>
+            <div className="text-xs text-gray-500">{order.influencerEmail || '—'}</div>
+            {order.influencerHandle && <div className="text-xs text-gray-400">{order.influencerHandle}</div>}
+          </td>
+          <td className="px-6 py-4">
+            <div className="font-medium text-gray-900 text-sm">
+              {order.campaignId ? `Campaign ${order.campaignId.slice(0, 8)}…` : '—'}
+            </div>
+            <div className="text-xs text-gray-500">{order.items.length} items</div>
+          </td>
+          <td className="px-6 py-4">{renderStatusBadge(order.status)}</td>
+          <td className="px-6 py-4 text-right font-medium text-gray-900 text-sm">{formatCurrency(order.value)}</td>
+        </tr>
+      );
+    });
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
@@ -545,13 +477,21 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
       <div className="flex-1 overflow-auto">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
           <h1 className="text-xl font-bold text-gray-900">Orders</h1>
+          <button
+            onClick={fetchOrders}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            Refresh
+          </button>
         </header>
 
         <main className="p-8 max-w-7xl mx-auto space-y-8">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><DollarSign size={14}/> Total Gifted Value</p>
-              <div className="mt-2 text-2xl font-bold text-gray-900">${stats.totalValue.toLocaleString()}</div>
+              <div className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(stats.totalValue)}</div>
             </div>
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><Package size={14}/> Total Orders</p>
@@ -568,35 +508,36 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Recent Orders (Mock)</h3>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
+                <p className="text-xs text-gray-500">Synced from Supabase Testing DB</p>
+              </div>
+              <div className="text-xs text-gray-400">Auto refresh disabled</div>
             </div>
+            {error && (
+              <div className="px-6 py-3 bg-red-50 border-b border-red-100 text-sm text-red-700">
+                {error}
+              </div>
+            )}
             <table className="w-full text-left">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-medium">
                 <tr>
-                  <th className="px-6 py-3">Order ID</th>
+                  <th className="px-6 py-3">Order</th>
                   <th className="px-6 py-3">Influencer</th>
+                  <th className="px-6 py-3">Campaign</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3 text-right">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {MOCK_ORDERS.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs text-indigo-600">#{order.shopifyId.slice(-4)}</td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900 text-sm">{order.influencer}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'fulfilled' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right font-medium text-gray-900 text-sm">${order.amount}</td>
-                  </tr>
-                ))}
+                {tableState()}
               </tbody>
             </table>
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 flex items-center gap-2">
+              <AlertTriangle size={12} />
+              <span>Shopify sync is not live yet, so statuses stay pending until fulfillment is wired up.</span>
+            </div>
           </div>
         </main>
       </div>
