@@ -1,143 +1,225 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
-  Layout,
-  Package,
-  Palette,
-  Settings,
-  Smartphone,
-  ChevronRight,
-  ChevronLeft,
-  Upload,
-  Info,
-  Battery,
-  Wifi,
-  Signal,
-  Plus,
-  Home,
-  Users,
-  Copy,
-  MoreHorizontal,
-  Globe,
-  Shield,
-  ShoppingCart,
-  Eye,
-  MapPin,
-  Trash2,
-  ExternalLink,
-  Download,
-  Link as LinkIcon,
-  MessageSquare,
-  FileText,
-  Tag,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Search,
-  Filter,
-  ArrowUpRight
+  Layout, Package, Palette, Settings, ChevronRight, ChevronLeft,
+  Info, Plus, Home, Users, Copy, ExternalLink, Download,
+  AlertTriangle, CheckCircle, XCircle, Search, Filter,
+  Loader2, Shield, MapPin, ShoppingCart, DollarSign, Globe, FileText,
+  Signal, Wifi, Battery
 } from 'lucide-react';
 
 /**
- * --- UTILITIES & HELPERS ---
+ * ==========================================
+ * SECTION 1: SUPABASE CLIENT (MOCKED FOR PREVIEW)
+ * * NOTE FOR LOCAL DEVELOPMENT:
+ * 1. Run `npm install @supabase/supabase-js`
+ * 2. Uncomment the import below
+ * 3. Replace the MockClient with the real createClient
+ * ==========================================
  */
 
-const generateSlug = (name) => {
-  const base = name
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return `${base}-${Math.random().toString(36).substring(2, 6)}`;
+import { createClient } from '@supabase/supabase-js'; // <--- UNCOMMENT THIS LOCALLY
+
+// --- INITIALIZE CLIENT ---
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL, 
+  import.meta.env.VITE_SUPABASE_KEY
+);
+/**
+ * ==========================================
+ * SECTION 2: ADDRESS SERVICE
+ * (Move to src/services/shopifyAddressService.js locally)
+ * ==========================================
+ */
+const MOCK_ADDRESSES = [
+  { id: 'addr_1', label: '200 University Ave W, Waterloo, ON, Canada' },
+  { id: 'addr_2', label: '33 New Montgomery St, San Francisco, CA 94105, USA' },
+  { id: 'addr_3', label: '1 Martin Place, Sydney NSW 2000, Australia' },
+  { id: 'addr_4', label: '101 Collins St, Melbourne VIC 3000, Australia' },
+];
+
+const shopifyAddressService = {
+  async searchAddresses(query) {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return [];
+    // Simulate API delay
+    await new Promise(r => setTimeout(r, 150));
+    return MOCK_ADDRESSES.filter(addr => addr.label.toLowerCase().includes(normalized));
+  },
 };
 
-const STORAGE_KEY = 'campaign_mvp_data';
-const db = {
-  get: () => {
-    try {
-      if (typeof window === 'undefined') return [];
-      const data = window.localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      console.warn('Storage access failed', e);
-      return [];
-    }
-  },
-  save: (campaigns) => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(campaigns));
-      }
-    } catch (e) {
-      console.warn('Storage save failed', e);
-    }
-  },
-  add: (campaign) => {
-    const current = db.get();
-    const newCampaign = { 
-      ...campaign, 
-      id: crypto.randomUUID(), 
-      createdAt: new Date().toISOString(),
-      status: 'active',
-      claims: 0
-    };
-    const updated = [newCampaign, ...current];
-    db.save(updated);
-    return newCampaign;
-  },
-  delete: (id) => {
-    const current = db.get();
-    const updated = current.filter(c => c.id !== id);
-    db.save(updated);
-    return updated;
-  },
-  incrementClaims: (id) => {
-    const current = db.get();
-    const updated = current.map(c => 
-      c.id === id ? { ...c, claims: (c.claims || 0) + 1 } : c
-    );
-    db.save(updated);
-    return updated;
-  }
-};
-
-// Form Sanitizers
-const sanitizeName = (val) => val.replace(/[^a-zA-Z\s'-]/g, '').slice(0, 40);
-const sanitizeEmail = (val) => val.replace(/[^\w.@+-]/g, '').slice(0, 60);
-const sanitizeHandle = (val) => {
-  const cleaned = val.replace(/[^a-zA-Z0-9._]/g, '').replace(/^@+/, '');
-  return cleaned ? `@${cleaned}` : '';
-};
-const sanitizePhone = (val) => val.replace(/\D/g, '').slice(0, 15);
-
-// Mock Data
-const MOCK_PRODUCTS = [
+/**
+ * ==========================================
+ * SECTION 3: CAMPAIGN SERVICE (Logic)
+ * (Move to src/services/campaignService.js locally)
+ * ==========================================
+ */
+const PRODUCT_CATALOG = [
   { id: 'p1', title: 'Vintage Leather Jacket', price: 650, image: 'https://images.unsplash.com/photo-1551028919-ac669d6301dd?auto=format&fit=crop&q=80&w=300' },
   { id: 'p2', title: 'Performance Energy Drink', price: 45, image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=300' },
   { id: 'p3', title: 'Hydrating Face Cream', price: 120, image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=300' },
   { id: 'p4', title: 'Ceramic Diffuser', price: 55, image: 'https://images.unsplash.com/photo-1616486029423-aaa478965c97?auto=format&fit=crop&q=80&w=300' },
   { id: 'p5', title: 'Silk Pillowcase', price: 85, image: 'https://images.unsplash.com/photo-1576014131795-d4c3a283033f?auto=format&fit=crop&q=80&w=300' },
-  { id: 'p6', title: 'Matcha Kit', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p6', title: 'Matcha Kit (Sold Out)', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
 ];
 
+const campaignService = {
+  // INFLUENCER VIEW: Fetch a campaign by its public link (slug)
+  async getCampaignBySlug(slug) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('slug', slug)
+      .eq('status', 'active')
+      .single();
+
+    if (error) {
+      console.error('Error fetching campaign:', error);
+      return null;
+    }
+
+    // Convert snake_case DB columns to camelCase for the React App
+    return {
+      id: data.id,
+      name: data.name,
+      slug: data.slug,
+      welcomeMessage: data.welcome_message,
+      brandColor: data.brand_color,
+      selectedProductIds: data.selected_product_ids || [], 
+      itemLimit: data.item_limit,
+      orderLimitPerLink: data.order_limit_per_link,
+      maxCartValue: data.max_cart_value,
+      shippingZone: data.shipping_zone,
+      restrictedCountries: data.restricted_countries,
+      showPhoneField: data.show_phone_field,
+      showInstagramField: data.show_instagram_field,
+      showTiktokField: data.show_tiktok_field,
+      askCustomQuestion: data.ask_custom_question,
+      customQuestionLabel: data.custom_question_label,
+      customQuestionRequired: data.custom_question_required,
+      termsConsentText: data.terms_consent_text,
+      showConsentCheckbox: data.show_consent_checkbox,
+      requireSecondConsent: data.require_second_consent,
+      secondConsentText: data.second_consent_text,
+      emailOptIn: data.email_opt_in,
+      emailConsentText: data.email_consent_text,
+      submitButtonText: data.submit_button_text,
+      gridTwoByTwo: true,
+      showSoldOut: true,
+      linkToStore: data.link_to_store,
+      linkText: data.link_text
+    };
+  },
+
+  // ADMIN DASHBOARD: Fetch all campaigns
+  async getAllCampaigns() {
+    // Note: The mock .order() implementation returns a thenable, so await works
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching campaigns:', error);
+      return [];
+    }
+    return data;
+  },
+
+  // ADMIN BUILDER: Create a new campaign
+  async createCampaign(campaignData) {
+    const payload = {
+      name: campaignData.name,
+      slug: campaignData.slug,
+      welcome_message: campaignData.welcomeMessage,
+      brand_color: campaignData.brandColor,
+      selected_product_ids: campaignData.selectedProductIds,
+      item_limit: campaignData.itemLimit || 1,
+      order_limit_per_link: campaignData.orderLimitPerLink ? parseInt(campaignData.orderLimitPerLink) : null,
+      max_cart_value: campaignData.maxCartValue ? parseFloat(campaignData.maxCartValue) : null,
+      block_duplicate_orders: campaignData.blockDuplicateOrders,
+      shipping_zone: campaignData.shippingZone,
+      restricted_countries: campaignData.restrictedCountries,
+      show_phone_field: campaignData.requirePhone,
+      show_instagram_field: campaignData.showInstagramField,
+      show_tiktok_field: campaignData.showTiktokField,
+      ask_custom_question: campaignData.askCustomQuestion,
+      custom_question_label: campaignData.customQuestionLabel,
+      custom_question_required: campaignData.customQuestionRequired,
+      show_consent_checkbox: campaignData.showConsentCheckbox,
+      terms_consent_text: campaignData.termsConsentText,
+      require_second_consent: campaignData.requireSecondConsent,
+      second_consent_text: campaignData.secondConsentText,
+      email_opt_in: campaignData.emailOptIn,
+      email_consent_text: campaignData.emailConsentText,
+      submit_button_text: campaignData.submitButtonText,
+      link_to_store: campaignData.linkToStore,
+      link_text: campaignData.linkText,
+      status: 'active',
+      claims_count: 0
+    };
+
+    const { data, error } = await supabase
+      .from('campaigns')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  // INFLUENCER ACTION: Submit an order
+  async createOrder(orderData) {
+    const { campaignId, items, ...customerInfo } = orderData;
+
+    const payload = {
+      campaign_id: campaignId,
+      influencer_email: customerInfo.email,
+      influencer_name: `${customerInfo.firstName} ${customerInfo.lastName}`,
+      influencer_handle: customerInfo.instagram || customerInfo.tiktok || '',
+      shipping_address: customerInfo.address,
+      items: items, 
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  getProducts() {
+    return PRODUCT_CATALOG;
+  }
+};
+
+const AnalyticsService = {
+  calculateStats: (orders) => {
+    const totalValue = orders.reduce((acc, ord) => acc + (ord.amount || 0), 0);
+    const fulfilled = orders.filter(o => o.status === 'fulfilled').length;
+    const pending = orders.filter(o => o.status === 'unfulfilled').length;
+    return { totalValue, totalOrders: orders.length, fulfilled, pending };
+  }
+};
+
+/**
+ * ==========================================
+ * SECTION 4: UI COMPONENTS & APP
+ * ==========================================
+ */
+
+// --- MOCK DATA FOR ORDERS (Since we don't have real orders yet) ---
 const MOCK_ORDERS = [
   { id: 'ord_1', shopifyId: '5968489152595', date: '2025-12-14T11:47:00', influencer: 'Demo Last', handle: '@demo.last', status: 'unfulfilled', campaign: 'Summer Seeding', amount: 2629.95, items: 3, risk: 'low' },
   { id: 'ord_2', shopifyId: '5968489152596', date: '2025-12-14T12:48:00', influencer: 'Sarah Jenks', handle: '@sarahj', status: 'fulfilled', campaign: 'Summer Seeding', amount: 120.00, items: 1, risk: 'low' },
-  { id: 'ord_3', shopifyId: '5968489152597', date: '2025-12-13T09:30:00', influencer: 'Mike Ross', handle: '@mikeross', status: 'fulfilled', campaign: 'Holiday Gift', amount: 45.00, items: 1, risk: 'low' },
-  { id: 'ord_4', shopifyId: '5968489152598', date: '2025-12-12T15:20:00', influencer: 'Jessica Pearson', handle: '@jpearson', status: 'unfulfilled', campaign: 'Summer Seeding', amount: 650.00, items: 1, risk: 'high' },
-];
-
-const MOCK_DOUBLE_ORDERS = [
-  { id: 'risk_1', date: '2025-12-10T09:21:00', influencer: 'exaw exaw', handle: '@exaw', campaign: 'Agency Partners', items: 1, value: 0 },
-  { id: 'risk_2', date: '2025-08-11T09:38:00', influencer: 'David Letterman', handle: '@letterman', campaign: 'Gifting', items: 1, value: 0 },
 ];
 
 const SHIPPING_ZONES = ["United States", "Canada", "United Kingdom", "Australia", "Germany"];
-
-/**
- * --- SHARED COMPONENTS ---
- */
 
 const Toggle = ({ enabled, onChange, label }) => (
   <button
@@ -150,11 +232,7 @@ const Toggle = ({ enabled, onChange, label }) => (
     }`}
   >
     <span className="sr-only">{label}</span>
-    <span
-      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-        enabled ? 'translate-x-6' : 'translate-x-1'
-      }`}
-    />
+    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
   </button>
 );
 
@@ -174,10 +252,9 @@ const RuleToggle = ({ label, description, enabled, onChange }) => (
       <p className="text-sm font-medium text-gray-900">{label}</p>
       {description && (
         <div className="group relative flex items-center">
-          <Info size={14} className="text-gray-400 hover:text-indigo-600 cursor-help transition-colors" />
+          <Info size={14} className="text-gray-400 hover:text-indigo-600 cursor-help" />
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none text-center">
             {description}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
           </div>
         </div>
       )}
@@ -186,34 +263,73 @@ const RuleToggle = ({ label, description, enabled, onChange }) => (
   </div>
 );
 
-/**
- * --- CLAIM EXPERIENCE COMPONENT ---
- */
+/* --- CLAIM EXPERIENCE --- */
 const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) => {
   const [step, setStep] = useState('selection');
   const [selectedIds, setSelectedIds] = useState([]);
   const [formData, setFormData] = useState({ 
-    firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', address: '',
-    customAnswer: '', billingAddress: ''
+    firstName: '', lastName: '', email: '', phone: '', instagram: '', address: '' 
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
   
+  // Real Address Search State
+  const [addressQuery, setAddressQuery] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+
+  // Address Search Handler
+  useEffect(() => {
+    if (addressQuery.length > 2) {
+      const timeoutId = setTimeout(async () => {
+        const results = await shopifyAddressService.searchAddresses(addressQuery);
+        setAddressSuggestions(results);
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    } else {
+      setAddressSuggestions([]);
+    }
+  }, [addressQuery]);
+
   const availableProducts = useMemo(() => {
-    return products.filter(p => campaign.selectedProductIds.includes(p.id));
+    if (!products) return [];
+    return products.filter(p => campaign.selectedProductIds?.includes(p.id));
   }, [products, campaign]);
 
   const toggleSelection = (id) => {
     if (selectedIds.includes(id)) {
       setSelectedIds(prev => prev.filter(pid => pid !== id));
     } else {
-      if (selectedIds.length >= campaign.itemLimit) return;
+      if (selectedIds.length >= (campaign.itemLimit || 1)) return;
       setSelectedIds(prev => [...prev, id]);
     }
   };
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
     if (isPreview) return;
-    if (onSubmit) onSubmit(campaign.id);
-    setStep('success');
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      if (!formData.email || !formData.address) throw new Error("Email and Address are required.");
+
+      const selectedItems = products.filter(p => selectedIds.includes(p.id));
+      const orderPayload = {
+        campaignId: campaign.id,
+        items: selectedItems,
+        ...formData
+      };
+
+      // Call the REAL Service
+      await campaignService.createOrder(orderPayload);
+      
+      if (onSubmit) onSubmit(campaign.id);
+      setStep('success');
+    } catch (err) {
+      console.error(err);
+      setError("Failed to submit order. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (step === 'success') {
@@ -223,48 +339,33 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
           <Package size={32} />
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Order Confirmed!</h2>
-        <p className="text-gray-500 text-sm">Your gifts are on the way. Check your email for tracking.</p>
-        
-        {campaign.linkToStore && (
-          <a 
-            href={`https://${campaign.linkToStore}`} 
-            target="_blank" 
-            rel="noreferrer"
-            className="mt-8 text-indigo-600 text-sm font-medium hover:underline flex items-center gap-1"
-          >
-            {campaign.linkText || 'Visit our Store'} <ExternalLink size={14} />
-          </a>
-        )}
+        <p className="text-gray-500 text-sm">Your gifts are on the way.</p>
       </div>
     );
   }
 
-  // --- RENDER: PRODUCT GRID ---
+  // PRODUCT GRID
   if (step === 'selection') {
     return (
       <div className="flex flex-col h-full bg-white">
         <div className="p-6 pb-2 text-center">
-           {campaign.brandLogo ? (
+            {campaign.brandLogo ? (
               <div className="h-8 w-20 mx-auto bg-gray-200 rounded animate-pulse" />
             ) : (
               <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: campaign.brandColor }}>
                 YOUR BRAND
               </div>
             )}
-            <div className="inline-flex px-3 py-1 bg-gray-100 rounded-full text-[10px] font-medium mb-3">
-              Hello, Creator
-            </div>
-            <h1 className="text-xl font-medium text-gray-900 leading-tight">
-              {campaign.welcomeMessage}
-            </h1>
+            <div className="inline-flex px-3 py-1 bg-gray-100 rounded-full text-[10px] font-medium mb-3">Hello, Creator</div>
+            <h1 className="text-xl font-medium text-gray-900 leading-tight">{campaign.welcomeMessage}</h1>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide">
-          {availableProducts.length === 0 ? (
-             <div className="py-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-xl">
-               No products available.
-             </div>
-          ) : (
+            {availableProducts.length === 0 ? (
+               <div className="py-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-xl">
+                 No products available.
+               </div>
+            ) : (
             <div className={`grid gap-3 ${campaign.gridTwoByTwo ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {availableProducts.map(p => {
                 const isSelected = selectedIds.includes(p.id);
@@ -280,7 +381,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                       {isSelected && (
                         <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
                           <div className="bg-white rounded-full p-1 shadow-sm">
-                            <div className="w-4 h-4 bg-indigo-600 rounded-full" style={{ backgroundColor: campaign.brandColor }} />
+                            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: campaign.brandColor }} />
                           </div>
                         </div>
                       )}
@@ -293,7 +394,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                 );
               })}
             </div>
-          )}
+            )}
         </div>
 
         <div className="p-4 border-t border-gray-100 bg-white/90 backdrop-blur-sm sticky bottom-0">
@@ -310,7 +411,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
     );
   }
 
-  // --- RENDER: DETAILS FORM ---
+  // FORM DETAILS
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 border-b border-gray-100 flex items-center gap-2 sticky top-0 bg-white z-10">
@@ -321,168 +422,84 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-6 space-y-4">
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs flex items-center gap-2">
+            <AlertTriangle size={14} /> {error}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
-          <input 
-            placeholder="First name" 
-            className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            value={formData.firstName}
-            onChange={e => setFormData(prev => ({...prev, firstName: sanitizeName(e.target.value)}))}
-          />
-          <input 
-            placeholder="Last name" 
-            className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            value={formData.lastName}
-            onChange={e => setFormData(prev => ({...prev, lastName: sanitizeName(e.target.value)}))}
-          />
+          <input placeholder="First name" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+            value={formData.firstName} onChange={e => setFormData(p => ({...p, firstName: e.target.value}))} />
+          <input placeholder="Last name" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+            value={formData.lastName} onChange={e => setFormData(p => ({...p, lastName: e.target.value}))} />
         </div>
-        <input 
-          placeholder="Email address" 
-          type="email"
-          className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-          value={formData.email}
-          onChange={e => setFormData(prev => ({...prev, email: sanitizeEmail(e.target.value)}))}
-        />
+        <input placeholder="Email address" type="email" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+          value={formData.email} onChange={e => setFormData(p => ({...p, email: e.target.value}))} />
         
-        {campaign.requirePhone && (
-          <input 
-            placeholder="Phone number" 
-            type="tel"
-            className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            value={formData.phone}
-            onChange={e => setFormData(prev => ({...prev, phone: sanitizePhone(e.target.value)}))}
-          />
+        {campaign.showInstagramField && (
+           <input placeholder="@instagram" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+             value={formData.instagram} onChange={e => setFormData(p => ({...p, instagram: e.target.value}))} />
         )}
 
-        {(campaign.showInstagramField || campaign.showTiktokField) && (
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            {campaign.showInstagramField && (
-              <input 
-                placeholder="@instagram" 
-                className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={formData.instagram}
-                onChange={e => setFormData(prev => ({...prev, instagram: sanitizeHandle(e.target.value)}))}
-              />
-            )}
-            {campaign.showTiktokField && (
-              <input 
-                placeholder="@tiktok" 
-                className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={formData.tiktok}
-                onChange={e => setFormData(prev => ({...prev, tiktok: sanitizeHandle(e.target.value)}))}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Custom Question */}
-        {campaign.askCustomQuestion && (
-          <div className="pt-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              {campaign.customQuestionLabel || 'Additional Question'}
-              {campaign.customQuestionRequired && <span className="text-red-500 ml-1">*</span>}
-            </label>
-            <input 
-              placeholder="Your answer..." 
-              className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={formData.customAnswer}
-              onChange={e => setFormData(prev => ({...prev, customAnswer: e.target.value}))}
-            />
-          </div>
-        )}
-
-        <div className="pt-2">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Shipping Address</label>
-          <div className="relative">
+        <div className="relative">
             <MapPin size={16} className="absolute left-3 top-3.5 text-gray-400" />
             <input 
               placeholder="Search address..." 
               className="w-full rounded-xl border border-gray-200 pl-9 pr-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={formData.address}
-              onChange={e => setFormData(prev => ({...prev, address: e.target.value}))}
+              value={addressQuery}
+              onChange={e => {
+                setAddressQuery(e.target.value);
+                setFormData(p => ({...p, address: e.target.value}));
+              }}
             />
-          </div>
-        </div>
-
-        {/* Billing Address Field if Enabled */}
-        {campaign.enableBilling && (
-          <div className="pt-2">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Billing Address (Optional)</label>
-            <input 
-              placeholder="Billing address..." 
-              className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={formData.billingAddress}
-              onChange={e => setFormData(prev => ({...prev, billingAddress: e.target.value}))}
-            />
-          </div>
-        )}
-
-        <div className="space-y-3 pt-2">
-          {/* Main Consent */}
-          {campaign.showConsentCheckbox && (
-            <label className="flex gap-3 items-start cursor-pointer group">
-              <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
-                {campaign.termsConsentText || "I agree to the terms and conditions."}
-              </span>
-            </label>
-          )}
-
-          {/* Second Consent */}
-          {campaign.requireSecondConsent && (
-            <label className="flex gap-3 items-start cursor-pointer group">
-              <input type="checkbox" className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
-                {campaign.secondConsentText || "Additional consent required."}
-              </span>
-            </label>
-          )}
-
-          {/* Email Opt-in */}
-          {campaign.emailOptIn && (
-            <label className="flex gap-3 items-start cursor-pointer group">
-              <input type="checkbox" defaultChecked className="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              <span className="text-xs text-gray-500 leading-relaxed group-hover:text-gray-700 transition-colors">
-                {campaign.emailConsentText || "Subscribe to email updates"}
-              </span>
-            </label>
-          )}
+            {addressSuggestions.length > 0 && (
+              <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {addressSuggestions.map(addr => (
+                  <div 
+                    key={addr.id}
+                    className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                    onClick={() => {
+                      setFormData(p => ({...p, address: addr.label}));
+                      setAddressQuery(addr.label);
+                      setAddressSuggestions([]);
+                    }}
+                  >
+                    {addr.label}
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       </div>
 
       <div className="p-4 border-t border-gray-100">
         <button
           onClick={handleClaim}
-          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg"
+          disabled={isSubmitting}
+          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2"
           style={{ backgroundColor: campaign.brandColor }}
         >
-          {campaign.submitButtonText || 'Confirm & Ship'}
+          {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : (campaign.submitButtonText || 'Confirm & Ship')}
         </button>
       </div>
     </div>
   );
 };
 
-/**
- * --- PAGES: ORDERS DASHBOARD (NEW) ---
- */
+/* --- ORDERS DASHBOARD (Improved with AnalyticsService) --- */
 const OrdersDashboard = ({ onNavigateDashboard }) => {
+  const stats = useMemo(() => AnalyticsService.calculateStats(MOCK_ORDERS), []);
+
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
-        {/* Same Sidebar Navigation for consistency */}
         <div className="h-16 flex items-center px-6 border-b border-gray-100">
           <div className="w-6 h-6 bg-indigo-600 rounded-md flex items-center justify-center text-white font-bold text-xs mr-2">A</div>
           <span className="font-semibold text-gray-900 tracking-tight">Admin</span>
         </div>
         <div className="p-4 space-y-1">
-          <button 
-            onClick={onNavigateDashboard}
-            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"
-          >
+          <button onClick={onNavigateDashboard} className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
             <Home size={18} /> Dashboard
-          </button>
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
-            <Users size={18} /> Influencers
           </button>
           <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg">
             <Package size={18} /> Orders
@@ -493,156 +510,54 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
       <div className="flex-1 overflow-auto">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
           <h1 className="text-xl font-bold text-gray-900">Orders</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Last updated: Just now</span>
-          </div>
         </header>
 
         <main className="p-8 max-w-7xl mx-auto space-y-8">
-          
-          {/* 1. TOP STATS */}
           <div className="grid grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Gifted</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">$310,605</span>
-                <span className="text-xs text-green-600 font-medium flex items-center">
-                  <ArrowUpRight size={10} /> 12%
-                </span>
-              </div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><DollarSign size={14}/> Total Gifted Value</p>
+              <div className="mt-2 text-2xl font-bold text-gray-900">${stats.totalValue.toLocaleString()}</div>
             </div>
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Orders</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">259</span>
-              </div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><Package size={14}/> Total Orders</p>
+              <div className="mt-2 text-2xl font-bold text-gray-900">{stats.totalOrders}</div>
             </div>
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Forms</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-gray-900">11</span>
-              </div>
+               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><CheckCircle size={14}/> Fulfilled</p>
+               <div className="mt-2 text-2xl font-bold text-green-600">{stats.fulfilled}</div>
             </div>
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending Approval</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-orange-600">2</span>
-                <span className="text-xs text-gray-400">Double orders</span>
-              </div>
+               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2"><AlertTriangle size={14}/> Action Needed</p>
+               <div className="mt-2 text-2xl font-bold text-orange-600">{stats.pending}</div>
             </div>
           </div>
 
-          {/* 2. ACTION CENTER (Double Orders) */}
-          {MOCK_DOUBLE_ORDERS.length > 0 && (
-            <div className="bg-orange-50 border border-orange-100 rounded-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-orange-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
-                    <AlertTriangle size={18} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900">Review Required: Double Orders</h3>
-                    <p className="text-xs text-gray-600">These influencers attempted to order more than once.</p>
-                  </div>
-                </div>
-              </div>
-              <div className="divide-y divide-orange-100/50">
-                {MOCK_DOUBLE_ORDERS.map(item => (
-                  <div key={item.id} className="px-6 py-4 flex items-center justify-between hover:bg-orange-50/80 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-white border border-orange-200 flex items-center justify-center text-orange-700 font-bold text-xs shadow-sm">
-                        {item.influencer.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{item.influencer}</p>
-                        <p className="text-xs text-gray-500">{item.handle} • {new Date(item.date).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-8">
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500 uppercase">Campaign</p>
-                        <p className="text-sm font-medium text-gray-900">{item.campaign}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm">
-                          <XCircle size={14} /> Reject
-                        </button>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-medium hover:bg-gray-800 transition-all shadow-sm">
-                          <CheckCircle size={14} /> Approve
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 3. RECENT ORDERS TABLE */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
-              <div className="flex gap-2">
-                <button className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-600">
-                  <Filter size={14} /> Filter
-                </button>
-                <div className="relative">
-                  <Search size={14} className="absolute left-2.5 top-2 text-gray-400" />
-                  <input placeholder="Search orders..." className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48" />
-                </div>
-              </div>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Recent Orders (Mock)</h3>
             </div>
             <table className="w-full text-left">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-medium">
                 <tr>
                   <th className="px-6 py-3">Order ID</th>
                   <th className="px-6 py-3">Influencer</th>
-                  <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Campaign</th>
                   <th className="px-6 py-3 text-right">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {MOCK_ORDERS.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50 transition-colors group">
+                  <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 font-mono text-xs text-indigo-600">#{order.shopifyId.slice(-4)}</td>
                     <td className="px-6 py-4">
-                      <div className="font-mono text-xs text-indigo-600 hover:underline cursor-pointer">#{order.shopifyId.slice(-4)}</div>
+                      <div className="font-medium text-gray-900 text-sm">{order.influencer}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
-                          {order.influencer.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{order.influencer}</div>
-                          <div className="text-xs text-gray-500">{order.handle}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-xs text-gray-500">
-                      {new Date(order.date).toLocaleDateString()} <br/>
-                      <span className="text-[10px] opacity-70">{new Date(order.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {order.status === 'fulfilled' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                          Fulfilled
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-100">
-                          Unfulfilled
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
-                        {order.campaign}
+                      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${order.status === 'fulfilled' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                        {order.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <span className="font-medium text-gray-900 text-sm">${order.amount}</span>
-                    </td>
+                    <td className="px-6 py-4 text-right font-medium text-gray-900 text-sm">${order.amount}</td>
                   </tr>
                 ))}
               </tbody>
@@ -654,22 +569,8 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
   );
 };
 
-/**
- * --- PAGES: ADMIN DASHBOARD (Home) ---
- */
+/* --- CAMPAIGN DASHBOARD --- */
 const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOrders }) => {
-  const handleExport = () => {
-    const csv = "Name,Slug,Link,Status,Created\n" + campaigns.map(c => 
-      `${c.name},${c.slug},gift.app/${c.slug},active,${c.createdAt}`
-    ).join("\n");
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `campaigns-${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-  };
-
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
@@ -678,104 +579,44 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
           <span className="font-semibold text-gray-900 tracking-tight">Admin</span>
         </div>
         <div className="p-4 space-y-1">
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg">
-            <Home size={18} /> Dashboard
-          </button>
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg">
-            <Users size={18} /> Influencers
-          </button>
-          <button 
-            onClick={onViewOrders}
-            className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"
-          >
-            <Package size={18} /> Orders
-          </button>
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg"><Home size={18} /> Dashboard</button>
+          <button onClick={onViewOrders} className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg"><Package size={18} /> Orders</button>
         </div>
       </div>
-
       <div className="flex-1 overflow-auto">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
           <h1 className="text-xl font-bold text-gray-900">Campaigns</h1>
-          <button onClick={onCreateCampaign} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all">
+          <button onClick={onCreateCampaign} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm">
             <Plus size={16} /> New Campaign
           </button>
         </header>
-
         <main className="p-8 max-w-6xl mx-auto space-y-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-gray-900">Active Links</h3>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                {campaigns.length} / 5 Forms Created
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={handleExport} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-md hover:bg-gray-50 text-gray-600">
-                <Download size={14} /> Export CSV
-              </button>
-            </div>
-          </div>
-
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             {campaigns.length === 0 ? (
               <div className="p-12 text-center">
-                <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400">
-                  <Package size={20} />
-                </div>
+                <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400"><Package size={20} /></div>
                 <h3 className="text-sm font-medium text-gray-900">No campaigns yet</h3>
-                <p className="text-sm text-gray-500 mt-1 mb-4">Create your first link to start gifting.</p>
-                <button onClick={onCreateCampaign} className="text-sm font-medium text-indigo-600 hover:underline">Create Link</button>
+                <button onClick={onCreateCampaign} className="text-sm font-medium text-indigo-600 hover:underline mt-2">Create Link</button>
               </div>
             ) : (
               <table className="w-full text-left">
                 <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-medium">
                   <tr>
-                    <th className="px-6 py-3">Campaign Name</th>
-                    <th className="px-6 py-3">Public Link</th>
+                    <th className="px-6 py-3">Campaign</th>
+                    <th className="px-6 py-3">Link</th>
                     <th className="px-6 py-3">Status</th>
-                    <th className="px-6 py-3 text-right">Actions</th>
+                    <th className="px-6 py-3 text-right">Claims</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {campaigns.map((c) => (
-                    <tr key={c.id} className="hover:bg-gray-50 transition-colors group">
+                    <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-900">{c.name}</td>
                       <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{c.name}</div>
-                        <div className="text-xs text-gray-500">{new Date(c.createdAt).toLocaleDateString()}</div>
+                        <a href={`#claim/${c.slug}`} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:text-indigo-600">gift.app/{c.slug}</a>
                       </td>
-                      <td className="px-6 py-4">
-                        <a 
-                          href={`#claim/${c.slug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                        >
-                          gift.app/{c.slug} <ExternalLink size={10} />
-                        </a>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Active
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button 
-                          onClick={() => {
-                             navigator.clipboard.writeText(`gift.app/${c.slug}`);
-                          }}
-                          className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md"
-                          title="Copy Link"
-                        >
-                          <Copy size={16} />
-                        </button>
-                        <button 
-                          onClick={() => onDeleteCampaign(c.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
+                      <td className="px-6 py-4"><span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Active</span></td>
+                      <td className="px-6 py-4 text-right font-mono text-gray-600">{c.claims_count || 0}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -788,9 +629,7 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
   );
 };
 
-/**
- * --- PAGES: CAMPAIGN BUILDER ---
- */
+/* --- CAMPAIGN BUILDER (Restored Full Functionality) --- */
 const CampaignBuilder = ({ onPublish, onCancel }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [isSaving, setIsSaving] = useState(false);
@@ -844,6 +683,9 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
     enableBilling: false,
   });
 
+  // Get products from service
+  const products = campaignService.getProducts();
+
   const updateField = (field, val) => setData(p => ({ ...p, [field]: val }));
   
   const toggleProduct = (id) => {
@@ -858,9 +700,17 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
 
   const handlePublish = async () => {
     setIsSaving(true);
-    await new Promise(r => setTimeout(r, 800)); // Fake API
-    const slug = generateSlug(data.name || 'campaign');
-    onPublish({ ...data, slug });
+    const slug = data.slug.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-');
+    
+    try {
+      await campaignService.createCampaign({ ...data, slug });
+      onPublish(); // Trigger refresh
+    } catch (e) {
+      console.error("Failed to publish", e);
+      alert(`Error publishing campaign: ${e.message || "Unknown error"}. Check console.`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Tab Button Helper
@@ -920,7 +770,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
 
             {activeTab === 'products' && (
               <div className="space-y-4">
-                {MOCK_PRODUCTS.map(p => (
+                {products.map(p => (
                   <div key={p.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-200">
                     <div className="flex items-center gap-4">
                       <img src={p.image} className="w-12 h-12 rounded-md object-cover bg-gray-100" />
@@ -1049,21 +899,21 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                 </RuleSection>
 
                 <RuleSection title="Product Settings" icon={Package}>
-                   <RuleToggle label="2x2 Grid View" description="Display products in a 2-column grid instead of a list." enabled={data.gridTwoByTwo} onChange={v => updateField('gridTwoByTwo', v)} />
-                   <RuleToggle label="Show Sold Out" description="Display out-of-stock items as disabled." enabled={data.showSoldOut} onChange={v => updateField('showSoldOut', v)} />
-                   <RuleToggle label="Hide Inactive" description="Hide products that are archived in Shopify." enabled={data.hideInactiveProducts} onChange={v => updateField('hideInactiveProducts', v)} />
-                   
-                   <div className="pt-3 border-t border-gray-100">
-                     <label className="block text-xs font-semibold text-gray-700 mb-1">Link to Store</label>
-                     <div className="grid grid-cols-2 gap-2">
+                    <RuleToggle label="2x2 Grid View" description="Display products in a 2-column grid instead of a list." enabled={data.gridTwoByTwo} onChange={v => updateField('gridTwoByTwo', v)} />
+                    <RuleToggle label="Show Sold Out" description="Display out-of-stock items as disabled." enabled={data.showSoldOut} onChange={v => updateField('showSoldOut', v)} />
+                    <RuleToggle label="Hide Inactive" description="Hide products that are archived in Shopify." enabled={data.hideInactiveProducts} onChange={v => updateField('hideInactiveProducts', v)} />
+                    
+                    <div className="pt-3 border-t border-gray-100">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Link to Store</label>
+                      <div className="grid grid-cols-2 gap-2">
                         <input className="px-3 py-2 rounded-lg border text-sm" placeholder="myshop.com" value={data.linkToStore} onChange={e => updateField('linkToStore', e.target.value)} />
                         <input className="px-3 py-2 rounded-lg border text-sm" placeholder="Link Text" value={data.linkText} onChange={e => updateField('linkText', e.target.value)} />
-                     </div>
-                   </div>
+                      </div>
+                    </div>
                 </RuleSection>
 
                 <RuleSection title="Shipping" icon={Globe}>
-                   <div className="relative">
+                    <div className="relative">
                       <select 
                         value={data.shippingZone}
                         onChange={(e) => updateField('shippingZone', e.target.value)}
@@ -1171,7 +1021,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
               <div className="flex gap-1"><Signal size={12} /><Wifi size={12} /><Battery size={12} /></div>
             </div>
             <div className="flex-1 overflow-hidden relative">
-              <ClaimExperience campaign={data} products={MOCK_PRODUCTS} isPreview={true} />
+              <ClaimExperience campaign={data} products={products} isPreview={true} />
             </div>
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-24 h-1.5 bg-slate-800 rounded-full"></div>
           </div>
@@ -1181,90 +1031,79 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
   );
 };
 
-/**
- * --- PAGES: PUBLIC CLAIM FORM (Standalone) ---
- */
-const PublicClaimPage = ({ campaign, onBack, onSubmit }) => {
-  if (!campaign) return <div>Campaign not found</div>;
-
-  return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-[380px] bg-white h-[800px] max-h-[90vh] rounded-[32px] shadow-2xl overflow-hidden flex flex-col relative">
-        <button 
-          onClick={onBack}
-          className="absolute top-4 right-4 z-50 bg-black/50 text-white p-2 rounded-full hover:bg-black/70"
-          title="Close Preview"
-        >
-          <ChevronRight size={16} />
-        </button>
-        <ClaimExperience campaign={campaign} products={MOCK_PRODUCTS} isPreview={false} onSubmit={onSubmit} />
-      </div>
-    </div>
-  );
-};
-
-/**
- * --- MAIN APP ORCHESTRATOR ---
- */
+/* --- MAIN APP ORCHESTRATOR --- */
 export default function App() {
   const [route, setRoute] = useState(typeof window !== 'undefined' ? window.location.hash : '');
   const [campaigns, setCampaigns] = useState([]);
-  const [view, setView] = useState('dashboard'); // Control view state manually for non-hash nav
+  const [view, setView] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+
+  // Initial Load from Supabase
+  const loadCampaigns = async () => {
+    setLoading(true);
+    try {
+      const data = await campaignService.getAllCampaigns();
+      setCampaigns(data || []);
+    } catch (e) {
+      console.error("Failed to load campaigns", e);
+      setCampaigns([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Initial Load
-    setCampaigns(db.get());
-
-    // Hash Listener
+    loadCampaigns();
     const onHashChange = () => setRoute(window.location.hash);
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const handleCreate = () => {
-    window.location.hash = '#create';
-  };
-  
-  const handlePublish = (data) => {
-    const newCampaign = db.add(data);
-    setCampaigns(prev => [newCampaign, ...prev]);
-    window.location.hash = ''; // Back to dashboard
-  };
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>;
+  }
 
-  const handleDelete = (id) => {
-    if (confirm('Are you sure you want to delete this campaign?')) {
-      const updated = db.delete(id);
-      setCampaigns(updated);
-    }
-  };
-
-  const handleClaimSubmission = (campaignId) => {
-    const updated = db.incrementClaims(campaignId);
-    setCampaigns(updated);
-  };
-
-  // Router Switch
+  // --- ROUTER: PUBLIC CLAIM PAGE ---
   if (route.startsWith('#claim/')) {
     const slug = route.split('#claim/')[1];
-    const campaign = campaigns.find(c => c.slug === slug);
-    return <PublicClaimPage campaign={campaign} onBack={() => window.location.hash = ''} onSubmit={handleClaimSubmission} />;
+    
+    // We need a separate state here because we need to fetch the single campaign async
+    // This is a simple implementation; normally you'd use a useEffect to fetch by slug
+    return <PublicClaimLoader slug={slug} />;
   }
   
   if (route === '#create') {
-     return <CampaignBuilder onPublish={handlePublish} onCancel={() => window.location.hash = ''} />;
+    return <CampaignBuilder onPublish={() => { loadCampaigns(); window.location.hash = ''; }} onCancel={() => window.location.hash = ''} />;
   }
-
-  if (view === 'orders') {
-    return <OrdersDashboard onNavigateDashboard={() => setView('dashboard')} />; // Render the new dashboard
-  }
-
-  // Default: Dashboard
-  return (
-    <DashboardHome 
-      campaigns={campaigns} 
-      onCreateCampaign={handleCreate} 
-      onDeleteCampaign={handleDelete}
-      onViewOrders={() => setView('orders')} // Switch to Orders view
-    />
-  );
+  
+  if (view === 'orders') return <OrdersDashboard onNavigateDashboard={() => setView('dashboard')} />;
+  
+  return <DashboardHome campaigns={campaigns} onCreateCampaign={() => window.location.hash = '#create'} onViewOrders={() => setView('orders')} />;
 }
+
+// Helper component to load a single campaign for the public view
+const PublicClaimLoader = ({ slug }) => {
+  const [campaign, setCampaign] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const products = campaignService.getProducts();
+
+  useEffect(() => {
+    const fetch = async () => {
+      const data = await campaignService.getCampaignBySlug(slug);
+      setCampaign(data);
+      setLoading(false);
+    };
+    fetch();
+  }, [slug]);
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (!campaign) return <div className="h-screen flex items-center justify-center text-gray-500">Campaign not found</div>;
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-[380px] bg-white h-[800px] max-h-[90vh] rounded-[32px] shadow-2xl overflow-hidden relative">
+        <ClaimExperience campaign={campaign} products={products} />
+      </div>
+    </div>
+  );
+};

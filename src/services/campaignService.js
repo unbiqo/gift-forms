@@ -1,82 +1,166 @@
-const MOCK_PRODUCTS = [
-  {
-    id: 'p1',
-    title: 'Vintage Leather Jacket',
-    image:
-      'https://images.unsplash.com/photo-1646300451176-f16171b2d03d?q=80&w=387&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
-    price: 650,
-  },
-  {
-    id: 'p2',
-    title: 'Performance Energy Drink',
-    image:
-      'https://images.unsplash.com/photo-1633710734156-a33cd91d7ac9?q=80&w=580&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
-    price: 45,
-  },
-  {
-    id: 'p3',
-    title: 'Hydrating Face Cream',
-    image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=300',
-    price: 120,
-  },
-  {
-    id: 'p4',
-    title: 'Ceramic Diffuser',
-    image:
-      'https://images.unsplash.com/photo-1572176798680-aa8103f4b61f?q=80&w=774&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
-    price: 55,
-  },
+import { supabase } from '../lib/supabaseClient';
+
+// --- STATIC PRODUCT CATALOG ---
+const PRODUCT_CATALOG = [
+  { id: 'p1', title: 'Vintage Leather Jacket', price: 650, image: 'https://images.unsplash.com/photo-1551028919-ac669d6301dd?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p2', title: 'Performance Energy Drink', price: 45, image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p3', title: 'Hydrating Face Cream', price: 120, image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p4', title: 'Ceramic Diffuser', price: 55, image: 'https://images.unsplash.com/photo-1616486029423-aaa478965c97?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p5', title: 'Silk Pillowcase', price: 85, image: 'https://images.unsplash.com/photo-1576014131795-d4c3a283033f?auto=format&fit=crop&q=80&w=300' },
+  { id: 'p6', title: 'Matcha Kit (Sold Out)', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
 ];
 
-const SHIPPING_COUNTRIES = ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany'];
-
-const delay = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
-
 export const campaignService = {
-  async loadInitialData() {
-    await delay();
+  
+  /**
+   * INFLUENCER VIEW: Fetch a campaign by its public link (slug)
+   */
+  async getCampaignBySlug(slug) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('slug', slug)
+      .eq('status', 'active')
+      .single();
+
+    if (error) {
+      console.error('Error fetching campaign:', error);
+      return null;
+    }
+
+    // Convert snake_case DB columns to camelCase for the React App
     return {
-      campaign: {
-        name: 'Summer Influencer Seeding',
-        welcomeMessage: 'Hey! We love your content. Here is a gift on us.',
-        selectedProductIds: ['p1', 'p2', 'p3'],
-        brandColor: '#000000',
-        brandLogo: null,
-        itemLimit: 1,
-        orderLimitPerLink: 5,
-        campaignOrderCap: '',
-        maxCartValue: '',
-        blockDuplicateOrders: true,
-        shippingZone: 'United States',
-        restrictedCountries: '',
-        showPhoneField: true,
-        showInstagramField: true,
-        showTiktokField: true,
-        showConsentCheckbox: true,
-        termsConsentText: 'I consent to reposting my content.',
-        secondConsentText: '',
-        requireSecondConsent: false,
-        emailOptIn: false,
-        showSoldOut: true,
-        hideInactiveProducts: true,
-        allowQuantitySelector: false,
-      },
-      products: MOCK_PRODUCTS,
-      shippingZones: SHIPPING_COUNTRIES,
+      id: data.id,
+      name: data.name,
+      slug: data.slug,
+      welcomeMessage: data.welcome_message,
+      brandColor: data.brand_color,
+      selectedProductIds: data.selected_product_ids || [], // Ensure array
+      itemLimit: data.item_limit,
+      orderLimitPerLink: data.order_limit_per_link,
+      maxCartValue: data.max_cart_value,
+      shippingZone: data.shipping_zone,
+      restrictedCountries: data.restricted_countries,
+      showPhoneField: data.show_phone_field,
+      showInstagramField: data.show_instagram_field,
+      showTiktokField: data.show_tiktok_field,
+      askCustomQuestion: data.ask_custom_question,
+      customQuestionLabel: data.custom_question_label,
+      customQuestionRequired: data.custom_question_required,
+      termsConsentText: data.terms_consent_text,
+      showConsentCheckbox: data.show_consent_checkbox,
+      requireSecondConsent: data.require_second_consent,
+      secondConsentText: data.second_consent_text,
+      emailOptIn: data.email_opt_in,
+      emailConsentText: data.email_consent_text,
+      submitButtonText: data.submit_button_text,
+      
+      // Configuration bits that might still be in JSON or implied
+      gridTwoByTwo: true, // defaulting for UI
+      showSoldOut: true,
+      linkToStore: data.link_to_store,
+      linkText: data.link_text
     };
   },
 
-  async saveDraft(payload) {
-    await delay();
-    console.info('Saving draft', payload);
+  /**
+   * ADMIN DASHBOARD: Fetch all campaigns
+   */
+  async getAllCampaigns() {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching campaigns:', error);
+      return [];
+    }
+    return data;
   },
 
-  async publish(payload) {
-    await delay();
-    console.info('Publishing campaign', payload);
+  /**
+   * ADMIN BUILDER: Create a new campaign
+   * Maps camelCase frontend state to snake_case DB columns
+   */
+  async createCampaign(campaignData) {
+    const payload = {
+      name: campaignData.name,
+      slug: campaignData.slug,
+      welcome_message: campaignData.welcomeMessage,
+      brand_color: campaignData.brandColor,
+      
+      // Mapping detailed fields to your new columns
+      selected_product_ids: campaignData.selectedProductIds,
+      item_limit: campaignData.itemLimit || 1,
+      order_limit_per_link: campaignData.orderLimitPerLink ? parseInt(campaignData.orderLimitPerLink) : null,
+      max_cart_value: campaignData.maxCartValue ? parseFloat(campaignData.maxCartValue) : null,
+      block_duplicate_orders: campaignData.blockDuplicateOrders,
+      
+      shipping_zone: campaignData.shippingZone,
+      restricted_countries: campaignData.restrictedCountries,
+      
+      show_phone_field: campaignData.requirePhone, // Note mapping difference in state vs db
+      show_instagram_field: campaignData.showInstagramField,
+      show_tiktok_field: campaignData.showTiktokField,
+      
+      ask_custom_question: campaignData.askCustomQuestion,
+      custom_question_label: campaignData.customQuestionLabel,
+      custom_question_required: campaignData.customQuestionRequired,
+      
+      show_consent_checkbox: campaignData.showConsentCheckbox,
+      terms_consent_text: campaignData.termsConsentText,
+      require_second_consent: campaignData.requireSecondConsent,
+      second_consent_text: campaignData.secondConsentText,
+      email_opt_in: campaignData.emailOptIn,
+      email_consent_text: campaignData.emailConsentText,
+      submit_button_text: campaignData.submitButtonText,
+      
+      link_to_store: campaignData.linkToStore,
+      link_text: campaignData.linkText,
+      
+      status: 'active',
+      claims_count: 0
+    };
+
+    const { data, error } = await supabase
+      .from('campaigns')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
+
+  /**
+   * INFLUENCER ACTION: Submit an order
+   */
+  async createOrder(orderData) {
+    const { campaignId, items, ...customerInfo } = orderData;
+
+    const payload = {
+      campaign_id: campaignId,
+      influencer_email: customerInfo.email,
+      influencer_name: `${customerInfo.firstName} ${customerInfo.lastName}`,
+      influencer_handle: customerInfo.instagram || customerInfo.tiktok || '',
+      shipping_address: customerInfo.address, // Assuming text or JSON based on your table
+      items: items, // Stores the array of selected products
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  getProducts() {
+    return PRODUCT_CATALOG;
+  }
 };
-
-export function getProductCatalog() {
-  return MOCK_PRODUCTS.map(product => ({ ...product }));
-}
