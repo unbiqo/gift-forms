@@ -4,7 +4,7 @@ import {
   Info, Plus, Home, Users, Copy, ExternalLink, Download,
   AlertTriangle, CheckCircle, XCircle, Search, Filter,
   Loader2, Shield, MapPin, ShoppingCart, DollarSign, Globe, FileText,
-  Signal, Wifi, Battery, RefreshCw
+  Signal, Wifi, Battery, RefreshCw, ArrowUpDown
 } from 'lucide-react';
 import { googleAddressService } from './services/googleAddressService';
 import { orderService } from './services/orderService';
@@ -348,6 +348,23 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({
+    campaign: 'all',
+    status: 'all',
+    consent: 'all'
+  });
+  const [sortConfig, setSortConfig] = useState({
+    key: 'date',
+    direction: 'desc'
+  });
+
+  const buildConsentStatus = useCallback((order) => {
+    const hasTerms = Boolean(order?.termsConsent);
+    const hasMarketing = Boolean(order?.marketingOptIn);
+    if (hasTerms && hasMarketing) return 'Fully Consented';
+    if (hasTerms) return 'Standard Only';
+    return 'No Consent Recorded';
+  }, []);
 
   const stats = useMemo(() => AnalyticsService.calculateStats(orders), [orders]);
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat('en-US', {
@@ -361,6 +378,21 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     currency: 'USD',
     minimumFractionDigits: 0
   }), []);
+
+  const campaignOptions = useMemo(() => {
+    const names = Array.from(new Set(orders.map(o => o.campaignName).filter(Boolean)));
+    return names;
+  }, [orders]);
+
+  const statusOptions = useMemo(() => {
+    const statuses = Array.from(new Set(orders.map(o => o.status).filter(Boolean)));
+    return statuses;
+  }, [orders]);
+
+  const consentOptions = useMemo(() => {
+    const consents = Array.from(new Set(orders.map(o => buildConsentStatus(o))));
+    return consents;
+  }, [orders, buildConsentStatus]);
 
   const fetchOrders = useCallback(async () => {
     setRefreshing(true);
@@ -380,6 +412,56 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      if (filters.campaign !== 'all' && order.campaignName !== filters.campaign) return false;
+      if (filters.status !== 'all' && order.status !== filters.status) return false;
+      if (filters.consent !== 'all' && buildConsentStatus(order) !== filters.consent) return false;
+      return true;
+    });
+  }, [orders, filters, buildConsentStatus]);
+
+  const sortedOrders = useMemo(() => {
+    const data = [...filteredOrders];
+    const { key, direction } = sortConfig;
+    const multiplier = direction === 'asc' ? 1 : -1;
+
+    data.sort((a, b) => {
+      if (key === 'date') {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return (dateA - dateB) * multiplier;
+      }
+      if (key === 'status') {
+        return (a.status || '').localeCompare(b.status || '') * multiplier;
+      }
+      if (key === 'value') {
+        const valueA = Number(a.value) || 0;
+        const valueB = Number(b.value) || 0;
+        return (valueA - valueB) * multiplier;
+      }
+      return 0;
+    });
+
+    return data;
+  }, [filteredOrders, sortConfig]);
+
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return {
+          key,
+          direction: prev.direction === 'asc' ? 'desc' : 'asc'
+        };
+      }
+      return { key, direction: key === 'date' ? 'desc' : 'asc' };
+    });
+  };
+
+  const handleFilterChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
 
   const formatCurrency = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
@@ -405,7 +487,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
       const day = pad(date.getDate());
       const hours = pad(date.getHours());
       const minutes = pad(date.getMinutes());
-      return `${year}-${month}-${day} ${hours}:${minutes}`;
+      return `${year}/${month}/${day} ${hours}:${minutes}`;
     } catch {
       return value;
     }
@@ -414,8 +496,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
   const formatDisplayOrderId = (order) => {
     const external = order.shopifyOrderNumber;
     if (external) return `#${external}`;
-    if (order.shopifyOrderId) return `#${order.shopifyOrderId.slice(-6)}`;
-    if (order.id) return `#${order.id.slice(-6)}`;
+    if (order.id) return `#${order.id.slice(0, 8)}`;
     return '#—';
   };
 
@@ -425,14 +506,6 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     return '';
   };
 
-  const buildConsentStatus = (order) => {
-    const hasTerms = Boolean(order?.termsConsent);
-    const hasMarketing = Boolean(order?.marketingOptIn);
-    if (hasTerms && hasMarketing) return 'Fully Consented (Terms + Marketing)';
-    if (hasTerms) return 'Standard Only (Terms)';
-    return 'No Consent Recorded';
-  };
-
   const escapeCsvValue = (value) => {
     if (value === null || value === undefined) return '""';
     const str = String(value).replace(/"/g, '""');
@@ -440,34 +513,33 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
   };
 
   const consentBadgeClass = (order) => {
-    const hasTerms = Boolean(order?.termsConsent);
-    const hasMarketing = Boolean(order?.marketingOptIn);
-    if (hasTerms && hasMarketing) return 'bg-green-50 text-green-700 border border-green-100';
-    if (hasTerms) return 'bg-blue-50 text-blue-700 border border-blue-100';
+    const status = buildConsentStatus(order);
+    if (status === 'Fully Consented') return 'bg-green-50 text-green-700 border border-green-100';
+    if (status === 'Standard Only') return 'bg-blue-50 text-blue-700 border border-blue-100';
     return 'bg-gray-50 text-gray-500 border border-gray-100';
   };
 
   const handleExportCSV = () => {
-    if (!orders.length) return;
+    if (!sortedOrders.length) return;
 
     const headers = [
       'Order ID',
-      'Order Date',
-      'Influencer Name',
+      'Date',
+      'Influencer',
       'Email',
-      'Phone Number',
-      'Instagram Handle',
-      'TikTok Handle',
+      'Phone',
+      'Instagram',
+      'TikTok',
       'Campaign',
       'Status',
       'Fulfillment ID',
-      'Order Value',
-      'Consent Status'
+      'Value',
+      'Consent'
     ];
 
-    const rows = orders.map((order) => {
+    const rows = sortedOrders.map((order) => {
       const orderId = formatCsvOrderId(order);
-      const orderDate = formatCsvDate(order.createdAt);
+      const orderDate = ` ${formatCsvDate(order.createdAt)}`;
       const orderValue = typeof order.value === 'number'
         ? order.value.toFixed(2)
         : (order.value || '0');
@@ -480,7 +552,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
         order.influencerPhone || '',
         order.influencerInstagram || '',
         order.influencerTiktok || '',
-        order.campaignId || '',
+        order.campaignName || '',
         order.status || '',
         order.shopifyFulfillmentId || '',
         orderValue,
@@ -547,17 +619,20 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
       );
     }
 
-    if (orders.length === 0) {
+    if (sortedOrders.length === 0) {
+      const emptyMessage = orders.length === 0
+        ? 'No orders yet. Share a claim link to see activity here.'
+        : 'No orders match the current filters.';
       return (
         <tr>
           <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={7}>
-            No orders yet. Share a claim link to see activity here.
+            {emptyMessage}
           </td>
         </tr>
       );
     }
 
-    return orders.map((order) => {
+    return sortedOrders.map((order) => {
       const displayOrderId = formatDisplayOrderId(order);
       const displayDate = formatDate(order.createdAt);
       return (
@@ -575,9 +650,9 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
           </td>
           <td className="px-6 py-4">
             <div className="font-medium text-gray-900 text-sm">
-              {order.campaignId ? `Campaign ${order.campaignId.slice(0, 8)}…` : '—'}
+              {order.campaignName || '—'}
             </div>
-            <div className="text-xs text-gray-500">{order.items.length} items</div>
+            <div className="text-xs text-gray-500">{(order.items?.length || 0)} items</div>
           </td>
           <td className="px-6 py-4">{renderStatusBadge(order.status)}</td>
           <td className="px-6 py-4">
@@ -651,7 +726,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
                   </button>
                   <button
                     onClick={handleExportCSV}
-                    disabled={!orders.length}
+                    disabled={!sortedOrders.length}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                   >
                     <Download size={16} />
@@ -666,16 +741,95 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
                 {error}
               </div>
             )}
+            <div className="px-6 py-3 border-b border-gray-200 bg-white">
+              <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Campaign</span>
+                  <select
+                    value={filters.campaign}
+                    onChange={(e) => handleFilterChange('campaign', e.target.value)}
+                    className="min-w-[160px] text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Campaigns</option>
+                    {campaignOptions.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Status</span>
+                  <select
+                    value={filters.status}
+                    onChange={(e) => handleFilterChange('status', e.target.value)}
+                    className="min-w-[140px] text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Statuses</option>
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Consent</span>
+                  <select
+                    value={filters.consent}
+                    onChange={(e) => handleFilterChange('consent', e.target.value)}
+                    className="min-w-[160px] text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">All Consent</option>
+                    {consentOptions.map((consent) => (
+                      <option key={consent} value={consent}>{consent}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
             <table className="w-full text-left">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-medium">
                 <tr>
-                  <th className="px-6 py-3">Order</th>
+                  <th className="px-6 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('date')}
+                      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-900"
+                    >
+                      Order
+                      <ArrowUpDown
+                        size={14}
+                        className={`h-4 w-4 transform transition-transform ${sortConfig.key === 'date' ? 'text-gray-900' : 'text-gray-400'} ${sortConfig.key === 'date' && sortConfig.direction === 'asc' ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  </th>
                   <th className="px-6 py-3">Influencer</th>
                   <th className="px-6 py-3">Contact</th>
                   <th className="px-6 py-3">Campaign</th>
-                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('status')}
+                      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-900"
+                    >
+                      Status
+                      <ArrowUpDown
+                        size={14}
+                        className={`h-4 w-4 transform transition-transform ${sortConfig.key === 'status' ? 'text-gray-900' : 'text-gray-400'} ${sortConfig.key === 'status' && sortConfig.direction === 'asc' ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  </th>
                   <th className="px-6 py-3">Consent</th>
-                  <th className="px-6 py-3 text-right">Value</th>
+                  <th className="px-6 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('value')}
+                      className="flex items-center justify-end gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-900 w-full"
+                    >
+                      Value
+                      <ArrowUpDown
+                        size={14}
+                        className={`h-4 w-4 transform transition-transform ${sortConfig.key === 'value' ? 'text-gray-900' : 'text-gray-400'} ${sortConfig.key === 'value' && sortConfig.direction === 'asc' ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

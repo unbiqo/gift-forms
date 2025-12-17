@@ -22,11 +22,12 @@ const deriveOrderValue = (items) => {
 const mapRecord = (record) => ({
   id: record.id,
   campaignId: record.campaign_id,
+  campaignName: record.campaigns?.name || 'Standard Campaign',
   createdAt: record.created_at,
   influencerEmail: record.influencer_email,
   influencerPhone: record.influencer_phone,
   influencerInstagram: record.influencer_handle_instagram || record.influencer_handle,
-  influencerTiktok: record.influencer_handle_tiktok,
+  influencerTiktok: record.influencer_handle_tiktok || record.influencer_tiktok,
   influencerName: record.influencer_name,
   items: parseItems(record.items),
   shippingAddress: record.shipping_address,
@@ -43,7 +44,7 @@ export const orderService = {
   async listOrders({ limit = 50 } = {}) {
     const { data, error } = await supabase
       .from('orders')
-      .select('*')
+      .select('*,campaigns(name)')
       .order('created_at', { ascending: false })
       .limit(limit);
 
