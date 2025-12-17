@@ -28,3 +28,4 @@ supabase/.temp/
 supabase/.branches/
 .env*
 !.env.example
+.env.local
