@@ -395,6 +395,114 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     }
   };
 
+  const formatCsvDate = (value) => {
+    if (!value) return '';
+    try {
+      const date = new Date(value);
+      const pad = (num) => String(num).padStart(2, '0');
+      const year = date.getFullYear();
+      const month = pad(date.getMonth() + 1);
+      const day = pad(date.getDate());
+      const hours = pad(date.getHours());
+      const minutes = pad(date.getMinutes());
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    } catch {
+      return value;
+    }
+  };
+
+  const formatDisplayOrderId = (order) => {
+    const external = order.shopifyOrderNumber;
+    if (external) return `#${external}`;
+    if (order.shopifyOrderId) return `#${order.shopifyOrderId.slice(-6)}`;
+    if (order.id) return `#${order.id.slice(-6)}`;
+    return '#—';
+  };
+
+  const formatCsvOrderId = (order) => {
+    if (order.shopifyOrderNumber) return order.shopifyOrderNumber;
+    if (order.id) return `#${order.id.slice(0, 8)}`;
+    return '';
+  };
+
+  const buildConsentStatus = (order) => {
+    const hasTerms = Boolean(order?.termsConsent);
+    const hasMarketing = Boolean(order?.marketingOptIn);
+    if (hasTerms && hasMarketing) return 'Fully Consented (Terms + Marketing)';
+    if (hasTerms) return 'Standard Only (Terms)';
+    return 'No Consent Recorded';
+  };
+
+  const escapeCsvValue = (value) => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const consentBadgeClass = (order) => {
+    const hasTerms = Boolean(order?.termsConsent);
+    const hasMarketing = Boolean(order?.marketingOptIn);
+    if (hasTerms && hasMarketing) return 'bg-green-50 text-green-700 border border-green-100';
+    if (hasTerms) return 'bg-blue-50 text-blue-700 border border-blue-100';
+    return 'bg-gray-50 text-gray-500 border border-gray-100';
+  };
+
+  const handleExportCSV = () => {
+    if (!orders.length) return;
+
+    const headers = [
+      'Order ID',
+      'Order Date',
+      'Influencer Name',
+      'Email',
+      'Phone Number',
+      'Instagram Handle',
+      'TikTok Handle',
+      'Campaign',
+      'Status',
+      'Fulfillment ID',
+      'Order Value',
+      'Consent Status'
+    ];
+
+    const rows = orders.map((order) => {
+      const orderId = formatCsvOrderId(order);
+      const orderDate = formatCsvDate(order.createdAt);
+      const orderValue = typeof order.value === 'number'
+        ? order.value.toFixed(2)
+        : (order.value || '0');
+
+      const csvRow = [
+        orderId,
+        orderDate,
+        order.influencerName || '',
+        order.influencerEmail || '',
+        order.influencerPhone || '',
+        order.influencerInstagram || '',
+        order.influencerTiktok || '',
+        order.campaignId || '',
+        order.status || '',
+        order.shopifyFulfillmentId || '',
+        orderValue,
+        buildConsentStatus(order)
+      ];
+
+      return csvRow.map(escapeCsvValue).join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const dateStamp = new Date().toISOString().split('T')[0];
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `influencer_orders_${dateStamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const renderStatusBadge = (status) => {
     const normalized = status || 'pending';
     const isFulfilled = normalized === 'fulfilled';
@@ -407,11 +515,29 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     );
   };
 
+  const renderContactBlock = (order) => {
+    const hasPhone = Boolean(order.influencerPhone);
+    const hasInstagram = Boolean(order.influencerInstagram);
+    const hasTiktok = Boolean(order.influencerTiktok);
+
+    if (!hasPhone && !hasInstagram && !hasTiktok) {
+      return <span className="text-sm text-gray-400">—</span>;
+    }
+
+    return (
+      <div className="space-y-1">
+        {hasPhone && <div className="text-sm text-gray-900">{order.influencerPhone}</div>}
+        {hasInstagram && <div className="text-xs text-gray-500">IG: {order.influencerInstagram}</div>}
+        {hasTiktok && <div className="text-xs text-gray-500">TT: {order.influencerTiktok}</div>}
+      </div>
+    );
+  };
+
   const tableState = () => {
     if (loading) {
       return (
         <tr>
-          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={5}>
+          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={7}>
             <div className="flex items-center justify-center gap-2">
               <Loader2 size={16} className="animate-spin text-indigo-600" />
               <span>Loading orders from Supabase…</span>
@@ -424,7 +550,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     if (orders.length === 0) {
       return (
         <tr>
-          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={5}>
+          <td className="px-6 py-10 text-center text-gray-500 text-sm" colSpan={7}>
             No orders yet. Share a claim link to see activity here.
           </td>
         </tr>
@@ -432,17 +558,20 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     }
 
     return orders.map((order) => {
-      const orderId = order.shopifyOrderNumber || order.shopifyOrderId || order.id;
+      const displayOrderId = formatDisplayOrderId(order);
+      const displayDate = formatDate(order.createdAt);
       return (
         <tr key={order.id} className="hover:bg-gray-50 transition-colors">
           <td className="px-6 py-4">
-            <div className="font-mono text-xs text-indigo-600">#{orderId ? orderId.slice(-6) : '—'}</div>
-            <div className="text-xs text-gray-500">{formatDate(order.createdAt)}</div>
+            <div className="font-mono text-xs text-indigo-600">{displayOrderId}</div>
+            <div className="text-xs text-gray-500">{displayDate}</div>
           </td>
           <td className="px-6 py-4">
             <div className="font-medium text-gray-900 text-sm">{order.influencerName || 'Unnamed Influencer'}</div>
             <div className="text-xs text-gray-500">{order.influencerEmail || '—'}</div>
-            {order.influencerHandle && <div className="text-xs text-gray-400">{order.influencerHandle}</div>}
+          </td>
+          <td className="px-6 py-4">
+            {renderContactBlock(order)}
           </td>
           <td className="px-6 py-4">
             <div className="font-medium text-gray-900 text-sm">
@@ -451,6 +580,11 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
             <div className="text-xs text-gray-500">{order.items.length} items</div>
           </td>
           <td className="px-6 py-4">{renderStatusBadge(order.status)}</td>
+          <td className="px-6 py-4">
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${consentBadgeClass(order)}`}>
+              {buildConsentStatus(order)}
+            </span>
+          </td>
           <td className="px-6 py-4 text-right font-medium text-gray-900 text-sm">{formatCurrency(order.value)}</td>
         </tr>
       );
@@ -475,16 +609,8 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center px-8 sticky top-0 z-10">
           <h1 className="text-xl font-bold text-gray-900">Orders</h1>
-          <button
-            onClick={fetchOrders}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-          >
-            {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            Refresh
-          </button>
         </header>
 
         <main className="p-8 max-w-7xl mx-auto space-y-8">
@@ -508,12 +634,32 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
                 <p className="text-xs text-gray-500">Synced from Supabase Testing DB</p>
               </div>
-              <div className="text-xs text-gray-400">Auto refresh disabled</div>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={fetchOrders}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                    Refresh
+                  </button>
+                  <button
+                    onClick={handleExportCSV}
+                    disabled={!orders.length}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Download size={16} />
+                    Download CSV
+                  </button>
+                </div>
+                <div className="text-xs text-gray-400">Auto refresh disabled</div>
+              </div>
             </div>
             {error && (
               <div className="px-6 py-3 bg-red-50 border-b border-red-100 text-sm text-red-700">
@@ -525,8 +671,10 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
                 <tr>
                   <th className="px-6 py-3">Order</th>
                   <th className="px-6 py-3">Influencer</th>
+                  <th className="px-6 py-3">Contact</th>
                   <th className="px-6 py-3">Campaign</th>
                   <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Consent</th>
                   <th className="px-6 py-3 text-right">Value</th>
                 </tr>
               </thead>
