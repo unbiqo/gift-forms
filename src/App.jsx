@@ -94,7 +94,8 @@ const campaignService = {
     const { data, error } = await supabase
       .from('campaigns')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .neq('status', 'deleted');
     
     if (error) {
       console.error('Error fetching campaigns:', error);
@@ -164,6 +165,19 @@ const campaignService = {
     const { data, error } = await supabase
       .from('orders')
       .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  // ADMIN DASHBOARD: Soft-delete a campaign by updating its status
+  async deleteCampaign(id) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .update({ status: 'deleted' })
+      .eq('id', id)
       .select()
       .single();
 
@@ -629,6 +643,7 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
                     <th className="px-6 py-3">Link</th>
                     <th className="px-6 py-3">Status</th>
                     <th className="px-6 py-3 text-right">Claims</th>
+                    <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -638,8 +653,26 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
                       <td className="px-6 py-4">
                         <a href={`#claim/${c.slug}`} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:text-indigo-600">gift.app/{c.slug}</a>
                       </td>
-                      <td className="px-6 py-4"><span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Active</span></td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            c.status === 'inactive'
+                              ? 'bg-yellow-50 text-yellow-700'
+                              : 'bg-green-50 text-green-700'
+                          }`}
+                        >
+                          {c.status || 'active'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-right font-mono text-gray-600">{c.claims_count || 0}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => onDeleteCampaign(c.id)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1088,6 +1121,19 @@ export default function App() {
     }
   };
 
+  const handleDeleteCampaign = async (id) => {
+    const shouldDelete = window.confirm('Delete this campaign? This only marks it as deleted in the database.');
+    if (!shouldDelete) return;
+
+    try {
+      await campaignService.deleteCampaign(id);
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      console.error('Failed to delete campaign', e);
+      alert('Unable to delete campaign right now. Please try again.');
+    }
+  };
+
   useEffect(() => {
     loadCampaigns();
     const onHashChange = () => setRoute(window.location.hash);
@@ -1114,7 +1160,14 @@ export default function App() {
   
   if (view === 'orders') return <OrdersDashboard onNavigateDashboard={() => setView('dashboard')} />;
   
-  return <DashboardHome campaigns={campaigns} onCreateCampaign={() => window.location.hash = '#create'} onViewOrders={() => setView('orders')} />;
+  return (
+    <DashboardHome
+      campaigns={campaigns}
+      onCreateCampaign={() => (window.location.hash = '#create')}
+      onDeleteCampaign={handleDeleteCampaign}
+      onViewOrders={() => setView('orders')}
+    />
+  );
 }
 
 // Helper component to load a single campaign for the public view
