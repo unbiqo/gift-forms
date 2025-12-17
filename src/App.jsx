@@ -95,7 +95,7 @@ const campaignService = {
       .from('campaigns')
       .select('*')
       .order('created_at', { ascending: false })
-      .neq('status', 'deleted');
+      .neq('status', 'archived');
     
     if (error) {
       console.error('Error fetching campaigns:', error);
@@ -174,15 +174,13 @@ const campaignService = {
 
   // ADMIN DASHBOARD: Soft-delete a campaign by updating its status
   async deleteCampaign(id) {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('campaigns')
-      .update({ status: 'deleted' })
-      .eq('id', id)
-      .select()
-      .single();
+      .update({ status: 'archived' })
+      .eq('id', id);
 
     if (error) throw error;
-    return data;
+    return { id };
   },
 
   getProducts() {
