@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase internal state
+supabase/.temp/
+supabase/.branches/
+.env*
+!.env.example
+.env.local

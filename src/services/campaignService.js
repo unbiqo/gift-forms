@@ -70,7 +70,8 @@ export const campaignService = {
     const { data, error } = await supabase
       .from('campaigns')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .neq('status', 'archived');
     
     if (error) {
       console.error('Error fetching campaigns:', error);
@@ -158,6 +159,19 @@ export const campaignService = {
 
     if (error) throw error;
     return data;
+  },
+
+  /**
+   * ADMIN DASHBOARD: Soft-delete a campaign by marking its status.
+   */
+  async deleteCampaign(id) {
+    const { error } = await supabase
+      .from('campaigns')
+      .update({ status: 'archived' })
+      .eq('id', id);
+
+    if (error) throw error;
+    return { id };
   },
 
   getProducts() {
