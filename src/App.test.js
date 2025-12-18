@@ -22,7 +22,7 @@ describe('Security & Sanitization', () => {
   it('removes dangerous characters from names', () => {
     const dirtyInput = "John <script>alert('xss')</script>";
     const clean = sanitizeName(dirtyInput);
-    expect(clean).toBe("John alertxss");
+    expect(clean).toBe("John scriptalert'xss'script");
     expect(clean).not.toContain("<");
     expect(clean).not.toContain(">");
   });

@@ -76,121 +76,230 @@ const RuleToggle = ({ label, description, enabled, onChange }) => (
 
 /* --- CLAIM EXPERIENCE --- */
 const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) => {
+  const sanitizeName = (value = '') => value.replace(/[^a-zA-Z\s'-]/g, '').slice(0, 50);
+  const sanitizePhone = (value = '') => value.replace(/\D/g, '').slice(0, 15);
+
   const [step, setStep] = useState('selection');
   const [selectedIds, setSelectedIds] = useState([]);
-  const [formData, setFormData] = useState({ 
-    firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', customAnswer: '', address: '',
-    consentPrimary: false, consentSecondary: false
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    instagram: '',
+    tiktok: '',
+    customAnswer: '',
+    address: '',
+    consentPrimary: false,
+    consentSecondary: false
   });
-  
-  // NEW: Store clean address data from Google (Zip, City, Country)
+  const [fieldErrors, setFieldErrors] = useState({});
   const [structuredAddress, setStructuredAddress] = useState(null);
-  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  
-  // Address Search State
   const [addressQuery, setAddressQuery] = useState('');
   const [addressSuggestions, setAddressSuggestions] = useState([]);
 
-  // Address Search Handler (Google API)
+  const showPhoneField = Boolean(campaign.showPhoneField);
+  const showInstagramField = Boolean(campaign.showInstagramField);
+  const showTiktokField = Boolean(campaign.showTiktokField);
+  const askCustomQuestion = Boolean(campaign.askCustomQuestion);
+  const customQuestionRequired = Boolean(campaign.customQuestionRequired);
+  const showConsentCheckbox = Boolean(campaign.showConsentCheckbox);
+  const requireSecondConsent = showConsentCheckbox && Boolean(campaign.requireSecondConsent);
+
   useEffect(() => {
     if (addressQuery.length > 2) {
-      const timeoutId = setTimeout(async () => {
+      const timeout = setTimeout(async () => {
         try {
-          // CHANGED: Use real Google service
           const results = await googleAddressService.searchAddresses(addressQuery);
           setAddressSuggestions(results);
-        } catch (e) {
-          console.error("Google Maps Error", e);
+        } catch (err) {
+          console.error('Google Maps Error', err);
         }
       }, 300);
-      return () => clearTimeout(timeoutId);
-    } else {
-      setAddressSuggestions([]);
+      return () => clearTimeout(timeout);
     }
+    setAddressSuggestions([]);
   }, [addressQuery]);
 
   const availableProducts = useMemo(() => {
     if (!products) return [];
-    return products.filter(p => campaign.selectedProductIds?.includes(p.id));
+    return products.filter((p) => campaign.selectedProductIds?.includes(p.id));
   }, [products, campaign]);
 
-  // RULE: Enforce Item Limit
   const toggleSelection = (id) => {
     if (selectedIds.includes(id)) {
-      setSelectedIds(prev => prev.filter(pid => pid !== id));
+      setSelectedIds((prev) => prev.filter((pid) => pid !== id));
     } else {
       const limit = campaign.itemLimit || 1;
-      if (selectedIds.length >= limit) {
-        // Optional: You could show a toast here like "You can only choose 1 item"
-        return; 
-      }
-      setSelectedIds(prev => [...prev, id]);
+      if (selectedIds.length >= limit) return;
+      setSelectedIds((prev) => [...prev, id]);
     }
   };
 
-  // RULE: Handle Address Selection & Country Validation
   const handleAddressSelect = async (addr) => {
-    // UI Updates
-    setFormData(p => ({...p, address: addr.label}));
+    setFormData((prev) => ({ ...prev, address: addr.label }));
     setAddressQuery(addr.label);
     setAddressSuggestions([]);
     setError(null);
 
     if (isPreview) return;
-
     try {
-      // Fetch details (Zip, City, Country)
       const details = await googleAddressService.getPlaceDetails(addr.id);
       setStructuredAddress(details);
-      
-      // VALIDATION: Check Shipping Zone
-      // Example: If campaign is "United States" but user picked "Canada"
       if (campaign.shippingZone && campaign.shippingZone !== 'World' && details.country !== campaign.shippingZone) {
         setError(`Sorry, this campaign is only available in ${campaign.shippingZone}.`);
-        setStructuredAddress(null); // Invalid address
+        setStructuredAddress(null);
       }
-    } catch (e) {
-      console.error("Failed to get address details", e);
+    } catch (err) {
+      console.error('Failed to get address details', err);
     }
   };
 
+  const ensureHandleFormat = (value = '') => {
+    if (!value) return '';
+    const trimmed = value.trim().replace(/\s+/g, '');
+    const withoutLeading = trimmed.replace(/^@+/, '');
+    return withoutLeading ? `@${withoutLeading}` : '';
+  };
+
+  const hasValidHandle = (value = '') => {
+    if (!value) return false;
+    const stripped = value.replace(/^@+/, '');
+    return Boolean(stripped && /[a-zA-Z0-9]/.test(stripped));
+  };
+
+  const validateField = useCallback((field, value) => {
+    switch (field) {
+      case 'email': {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value || '')) return 'Please enter a valid email address.';
+        return '';
+      }
+      case 'phone': {
+        if (!showPhoneField) return '';
+        const digits = value || '';
+        if (digits.length < 10 || digits.length > 15) return 'Phone number must be 10-15 digits.';
+        return '';
+      }
+      case 'instagram': {
+        if (!showInstagramField) return '';
+        if (!hasValidHandle(value)) return 'Instagram handle must include letters or numbers.';
+        return '';
+      }
+      case 'tiktok': {
+        if (!showTiktokField) return '';
+        if (!hasValidHandle(value)) return 'TikTok handle must include letters or numbers.';
+        return '';
+      }
+      default:
+        return '';
+    }
+  }, [showPhoneField, showInstagramField, showTiktokField]);
+
+  const upsertFieldError = (field, value) => {
+    const message = validateField(field, value);
+    setFieldErrors((prev) => {
+      if (!message) {
+        if (!(field in prev)) return prev;
+        const { [field]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [field]: message };
+    });
+  };
+
+  const handleFieldChange = (field, rawValue) => {
+    let value = rawValue || '';
+    if (field === 'firstName' || field === 'lastName') {
+      value = sanitizeName(value);
+    } else if (field === 'phone') {
+      value = sanitizePhone(value);
+    } else if (field === 'instagram' || field === 'tiktok') {
+      value = ensureHandleFormat(value);
+    }
+
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (['email', 'phone', 'instagram', 'tiktok'].includes(field)) {
+      upsertFieldError(field, value);
+    }
+  };
+
+  const handleBlur = (field) => {
+    upsertFieldError(field, formData[field]);
+  };
+
+  const forceValidateFields = () => {
+    const fieldsToCheck = ['email'];
+    if (showPhoneField) fieldsToCheck.push('phone');
+    if (showInstagramField) fieldsToCheck.push('instagram');
+    if (showTiktokField) fieldsToCheck.push('tiktok');
+
+    const errors = {};
+    fieldsToCheck.forEach((field) => {
+      const message = validateField(field, formData[field]);
+      if (message) errors[field] = message;
+    });
+    setFieldErrors(errors);
+    return errors;
+  };
+
+  const isConsentRequired = showConsentCheckbox;
+  const consentsSatisfied = !isConsentRequired || (formData.consentPrimary && (!requireSecondConsent || formData.consentSecondary));
+  const baseFieldsComplete = Boolean(formData.email && formData.address);
+  const contactFieldsComplete = (!showPhoneField || formData.phone.length >= 10) && (!showInstagramField || hasValidHandle(formData.instagram)) && (!showTiktokField || hasValidHandle(formData.tiktok));
+  const customAnswered = (!askCustomQuestion || !customQuestionRequired || Boolean(formData.customAnswer?.trim()));
+  const hasVisibleErrors = Object.values(fieldErrors).some(Boolean);
+  const canSubmit = !isSubmitting && !error && baseFieldsComplete && contactFieldsComplete && customAnswered && consentsSatisfied && !hasVisibleErrors;
+
   const handleClaim = async () => {
     if (isPreview) return;
+    const validationErrors = forceValidateFields();
+    if (Object.keys(validationErrors).length > 0 || !consentsSatisfied || !customAnswered || !contactFieldsComplete) {
+      setError('Please fix highlighted fields before submitting.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
-
     try {
-      if (!formData.email || !formData.address) throw new Error("Email and Address are required.");
-      if (campaign.showPhoneField && !formData.phone) throw new Error("Phone number is required.");
-      if (campaign.showInstagramField && !formData.instagram) throw new Error("Instagram handle is required.");
-      if (campaign.showTiktokField && !formData.tiktok) throw new Error("TikTok handle is required.");
-      if (campaign.askCustomQuestion && campaign.customQuestionRequired && !formData.customAnswer) throw new Error("Please answer the required question.");
-      if (campaign.showConsentCheckbox && !formData.consentPrimary) throw new Error("Please accept the consent terms.");
-      if (campaign.requireSecondConsent && !formData.consentSecondary) throw new Error("Please accept the additional consent.");
-      if (error) throw new Error("Please fix the errors before continuing.");
+      if (!formData.email || !formData.address) throw new Error('Email and Address are required.');
+      if (showPhoneField && !formData.phone) throw new Error('Phone number is required.');
+      if (showInstagramField && !formData.instagram) throw new Error('Instagram handle is required.');
+      if (showTiktokField && !formData.tiktok) throw new Error('TikTok handle is required.');
+      if (askCustomQuestion && customQuestionRequired && !formData.customAnswer) throw new Error('Please answer the required question.');
+      if (showConsentCheckbox && !formData.consentPrimary) throw new Error('Please accept the consent terms.');
+      if (requireSecondConsent && !formData.consentSecondary) throw new Error('Please accept the additional consent.');
 
-      const selectedItems = products.filter(p => selectedIds.includes(p.id));
-      
+      const selectedItems = products.filter((p) => selectedIds.includes(p.id));
       const orderPayload = {
         campaignId: campaign.id,
         items: selectedItems,
         ...formData,
-        shippingDetails: structuredAddress // Save the clean data
+        shippingDetails: structuredAddress
       };
-
-      // Call the REAL Service
       await orderService.createOrder(orderPayload);
-      
       if (onSubmit) onSubmit(campaign.id);
       setStep('success');
     } catch (err) {
       console.error(err);
-      setError(err.message || "Failed to submit order.");
+      setError(err.message || 'Failed to submit order.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const renderTooltip = (message) => {
+    if (!message) return null;
+    return (
+      <div className="absolute right-0 top-full mt-1 z-50 pointer-events-none shadow-lg">
+        <div className="relative bg-red-500 text-white text-xs rounded-lg px-2 py-1 tooltip-fade">
+          {message}
+          <span className="absolute -top-1 right-4 w-2 h-2 bg-red-500 rotate-45" />
+        </div>
+      </div>
+    );
   };
 
   if (step === 'success') {
@@ -205,38 +314,35 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
     );
   }
 
-  // PRODUCT GRID
   if (step === 'selection') {
     return (
       <div className="flex flex-col h-full bg-white">
         <div className="p-6 pb-2 text-center">
-            {campaign.brandLogo ? (
-              <div className="h-8 w-20 mx-auto bg-gray-200 rounded animate-pulse" />
-            ) : (
-              <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: campaign.brandColor }}>
-                YOUR BRAND
-              </div>
-            )}
-            <div className="inline-flex px-3 py-1 bg-gray-100 rounded-full text-[10px] font-medium mb-3">Hello, Creator</div>
-            <h1 className="text-xl font-medium text-gray-900 leading-tight">{campaign.welcomeMessage}</h1>
+          {campaign.brandLogo ? (
+            <div className="h-8 w-20 mx-auto bg-gray-200 rounded animate-pulse" />
+          ) : (
+            <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: campaign.brandColor }}>
+              YOUR BRAND
+            </div>
+          )}
+          <div className="inline-flex px-3 py-1 bg-gray-100 rounded-full text-[10px] font-medium mb-3">Hello, Creator</div>
+          <h1 className="text-xl font-medium text-gray-900 leading-tight">{campaign.welcomeMessage}</h1>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-2 scrollbar-hide">
-            {availableProducts.length === 0 ? (
-               <div className="py-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-xl">
-                 No products available.
-               </div>
-            ) : (
+          {availableProducts.length === 0 ? (
+            <div className="py-10 text-center text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-xl">
+              No products available.
+            </div>
+          ) : (
             <div className={`grid gap-3 ${campaign.gridTwoByTwo ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {availableProducts.map(p => {
+              {availableProducts.map((p) => {
                 const isSelected = selectedIds.includes(p.id);
-                // Visual feedback if disabled (limit reached and not selected)
-                const isLimitReached = selectedIds.length >= (campaign.itemLimit || 1);
-                const isDisabled = isLimitReached && !isSelected;
-
+                const limit = campaign.itemLimit || 1;
+                const isDisabled = selectedIds.length >= limit && !isSelected;
                 return (
-                  <div 
-                    key={p.id} 
+                  <div
+                    key={p.id}
                     onClick={() => toggleSelection(p.id)}
                     className={`group relative cursor-pointer transition-all ${isSelected ? 'ring-2 ring-offset-2' : ''} ${isDisabled ? 'opacity-50' : ''}`}
                     style={{ ringColor: isSelected ? campaign.brandColor : 'transparent' }}
@@ -253,18 +359,17 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                     </div>
                     <div className="px-1">
                       <div className="text-xs font-medium text-gray-900 truncate">{p.title}</div>
-                      <div className="text-[10px] text-gray-400 line-through">${p.price}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
-            )}
+          )}
         </div>
 
         <div className="p-4 border-t border-gray-100 bg-white/90 backdrop-blur-sm sticky bottom-0">
           <button
-            onClick={() => setStep('details')}
+            onClick={() => setStep('shipping')}
             disabled={selectedIds.length === 0}
             className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             style={{ backgroundColor: campaign.brandColor }}
@@ -272,36 +377,10 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             Claim {selectedIds.length > 0 ? `${selectedIds.length} Gift${selectedIds.length > 1 ? 's' : ''}` : 'Gifts'} <ChevronRight size={16} />
           </button>
         </div>
-
-        {campaign.showConsentCheckbox && (
-          <div className="space-y-2">
-            <label className="flex items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                checked={formData.consentPrimary}
-                onChange={e => setFormData(p => ({ ...p, consentPrimary: e.target.checked }))}
-              />
-              <span>{campaign.termsConsentText || 'I agree to the campaign terms.'}</span>
-            </label>
-            {campaign.requireSecondConsent && (
-              <label className="flex items-start gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={formData.consentSecondary}
-                  onChange={e => setFormData(p => ({ ...p, consentSecondary: e.target.checked }))}
-                />
-                <span>{campaign.secondConsentText || 'I agree to the additional consent.'}</span>
-              </label>
-            )}
-          </div>
-        )}
       </div>
     );
   }
 
-  // FORM DETAILS
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 border-b border-gray-100 flex items-center gap-2 sticky top-0 bg-white z-10">
@@ -317,82 +396,146 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             <AlertTriangle size={14} /> {error}
           </div>
         )}
+
         <div className="grid grid-cols-2 gap-3">
-          <input placeholder="First name" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
-            value={formData.firstName} onChange={e => setFormData(p => ({...p, firstName: e.target.value}))} />
-          <input placeholder="Last name" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
-            value={formData.lastName} onChange={e => setFormData(p => ({...p, lastName: e.target.value}))} />
-        </div>
-        <input placeholder="Email address" type="email" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-          value={formData.email} onChange={e => setFormData(p => ({...p, email: e.target.value}))} />
-        
-        {campaign.showPhoneField && (
           <input
-            placeholder="Phone number"
-            type="tel"
+            placeholder="First name"
             className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            value={formData.phone}
-            onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
+            value={formData.firstName}
+            onChange={(e) => handleFieldChange('firstName', e.target.value)}
           />
-        )}
-        
-        {campaign.showInstagramField && (
-           <input placeholder="@instagram" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-             value={formData.instagram} onChange={e => setFormData(p => ({...p, instagram: e.target.value}))} />
+          <input
+            placeholder="Last name"
+            className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            value={formData.lastName}
+            onChange={(e) => handleFieldChange('lastName', e.target.value)}
+          />
+        </div>
+
+        <div className="relative pb-5">
+          <input
+            placeholder="Email address"
+            type="email"
+            className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.email ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
+            value={formData.email}
+            onChange={(e) => handleFieldChange('email', e.target.value)}
+            onBlur={() => handleBlur('email')}
+          />
+          {renderTooltip(fieldErrors.email)}
+        </div>
+
+        {showPhoneField && (
+          <div className="relative pb-5">
+            <input
+              placeholder="Phone number"
+              type="tel"
+              className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.phone ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
+              value={formData.phone}
+              onChange={(e) => handleFieldChange('phone', e.target.value)}
+              onBlur={() => handleBlur('phone')}
+            />
+            {renderTooltip(fieldErrors.phone)}
+          </div>
         )}
 
-        {campaign.showTiktokField && (
-           <input placeholder="@tiktok" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-             value={formData.tiktok} onChange={e => setFormData(p => ({...p, tiktok: e.target.value}))} />
+        {showInstagramField && (
+          <div className="relative pb-5">
+            <input
+              placeholder="@instagram"
+              className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.instagram ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
+              value={formData.instagram}
+              onChange={(e) => handleFieldChange('instagram', e.target.value)}
+              onBlur={() => handleBlur('instagram')}
+            />
+            {renderTooltip(fieldErrors.instagram)}
+          </div>
         )}
 
-        {campaign.askCustomQuestion && (
+        {showTiktokField && (
+          <div className="relative pb-5">
+            <input
+              placeholder="@tiktok"
+              className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.tiktok ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
+              value={formData.tiktok}
+              onChange={(e) => handleFieldChange('tiktok', e.target.value)}
+              onBlur={() => handleBlur('tiktok')}
+            />
+            {renderTooltip(fieldErrors.tiktok)}
+          </div>
+        )}
+
+        {askCustomQuestion && (
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">{campaign.customQuestionLabel || 'Additional Details'}</label>
             <textarea
               className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
               rows={3}
               value={formData.customAnswer}
-              onChange={e => setFormData(p => ({ ...p, customAnswer: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, customAnswer: e.target.value }))}
             />
           </div>
         )}
 
         <div className="relative">
-            <MapPin size={16} className="absolute left-3 top-3.5 text-gray-400" />
-            <input 
-              placeholder="Search address..." 
-              className="w-full rounded-xl border border-gray-200 pl-9 pr-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={addressQuery}
-              onChange={e => {
-                setAddressQuery(e.target.value);
-                setFormData(p => ({...p, address: e.target.value}));
-                // Reset structured data if user types manually
-                if (structuredAddress) setStructuredAddress(null);
-              }}
-            />
-            {addressSuggestions.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                {addressSuggestions.map(addr => (
-                  <div 
-                    key={addr.id}
-                    className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                    onClick={() => handleAddressSelect(addr)} // CHANGED to new handler
-                  >
-                    {addr.label}
-                  </div>
-                ))}
-              </div>
-            )}
+          <MapPin size={16} className="absolute left-3 top-3.5 text-gray-400" />
+          <input
+            placeholder="Search address..."
+            className="w-full rounded-xl border border-gray-200 pl-9 pr-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            value={addressQuery}
+            onChange={(e) => {
+              setAddressQuery(e.target.value);
+              setFormData((prev) => ({ ...prev, address: e.target.value }));
+              if (structuredAddress) setStructuredAddress(null);
+            }}
+          />
+          {addressSuggestions.length > 0 && (
+            <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+              {addressSuggestions.map((addr) => (
+                <div
+                  key={addr.id}
+                  className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                  onClick={() => handleAddressSelect(addr)}
+                >
+                  {addr.label}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {showConsentCheckbox && (
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <p className="text-sm font-semibold text-gray-700">Consent</p>
+            <label className="flex items-start gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                checked={formData.consentPrimary}
+                onChange={(e) => setFormData((prev) => ({ ...prev, consentPrimary: e.target.checked }))}
+              />
+              <span>{campaign.termsConsentText || 'I agree to the campaign terms.'}</span>
+            </label>
+            {requireSecondConsent && (
+              <label className="flex items-start gap-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={formData.consentSecondary}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, consentSecondary: e.target.checked }))}
+                />
+                <span>{campaign.secondConsentText || 'I agree to the additional consent.'}</span>
+              </label>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="p-4 border-t border-gray-100">
         <button
           onClick={handleClaim}
-          disabled={isSubmitting || !!error}
-          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: campaign.brandColor }}
+          disabled={!canSubmit}
+          className="w-full h-12 rounded-full text-white font-semibold text-sm shadow-lg flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+          style={{ backgroundColor: canSubmit ? campaign.brandColor : '#d1d5db' }}
         >
           {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : (campaign.submitButtonText || 'Confirm & Ship')}
         </button>
@@ -400,7 +543,6 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
     </div>
   );
 };
-
 /* --- ORDERS DASHBOARD (Improved with AnalyticsService) --- */
 const OrdersDashboard = ({ onNavigateDashboard }) => {
   const [orders, setOrders] = useState([]);
