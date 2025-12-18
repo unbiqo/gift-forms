@@ -10,6 +10,62 @@ const PRODUCT_CATALOG = [
   { id: 'p6', title: 'Matcha Kit (Sold Out)', price: 40, image: 'https://images.unsplash.com/photo-1563822249548-9a72b6353cd1?auto=format&fit=crop&q=80&w=300' },
 ];
 
+const buildConfigFromCampaignData = (campaignData = {}) => {
+  return {
+    selectedProductIds: campaignData.selectedProductIds || [],
+    itemLimit: campaignData.itemLimit || 1,
+    orderLimitPerLink: campaignData.orderLimitPerLink ? parseInt(campaignData.orderLimitPerLink, 10) : null,
+    maxCartValue: campaignData.maxCartValue ? parseFloat(campaignData.maxCartValue) : null,
+    blockDuplicateOrders: Boolean(campaignData.blockDuplicateOrders),
+    shippingZone: campaignData.shippingZone || '',
+    restrictedCountries: campaignData.restrictedCountries || '',
+    showPhoneField: Boolean(campaignData.showPhoneField),
+    showInstagramField: Boolean(campaignData.showInstagramField),
+    showTiktokField: Boolean(campaignData.showTiktokField),
+    askCustomQuestion: Boolean(campaignData.askCustomQuestion),
+    customQuestionLabel: campaignData.customQuestionLabel || '',
+    customQuestionRequired: Boolean(campaignData.customQuestionRequired),
+    showConsentCheckbox: Boolean(campaignData.showConsentCheckbox),
+    termsConsentText: campaignData.termsConsentText || '',
+    requireSecondConsent: Boolean(campaignData.requireSecondConsent),
+    secondConsentText: campaignData.secondConsentText || '',
+    emailOptIn: Boolean(campaignData.emailOptIn),
+    emailConsentText: campaignData.emailConsentText || '',
+    submitButtonText: campaignData.submitButtonText || '',
+    linkToStore: campaignData.linkToStore || '',
+    linkText: campaignData.linkText || '',
+    gridTwoByTwo: 'gridTwoByTwo' in campaignData ? Boolean(campaignData.gridTwoByTwo) : true,
+    showSoldOut: 'showSoldOut' in campaignData ? Boolean(campaignData.showSoldOut) : true,
+  };
+};
+
+const mapCampaignConfig = (config = {}) => ({
+  selectedProductIds: config.selectedProductIds || [],
+  itemLimit: config.itemLimit || 1,
+  orderLimitPerLink: config.orderLimitPerLink ?? null,
+  maxCartValue: config.maxCartValue ?? null,
+  blockDuplicateOrders: config.blockDuplicateOrders ?? false,
+  shippingZone: config.shippingZone || '',
+  restrictedCountries: config.restrictedCountries || '',
+  showPhoneField: config.showPhoneField ?? false,
+  showInstagramField: config.showInstagramField ?? false,
+  showTiktokField: config.showTiktokField ?? false,
+  askCustomQuestion: config.askCustomQuestion ?? false,
+  customQuestionLabel: config.customQuestionLabel || '',
+  customQuestionRequired: config.customQuestionRequired ?? false,
+  showConsentCheckbox: config.showConsentCheckbox ?? false,
+  termsConsentText: config.termsConsentText || '',
+  requireSecondConsent: config.requireSecondConsent ?? false,
+  secondConsentText: config.secondConsentText || '',
+  emailOptIn: config.emailOptIn ?? false,
+  emailConsentText: config.emailConsentText || '',
+  submitButtonText: config.submitButtonText || '',
+  linkToStore: config.linkToStore || '',
+  linkText: config.linkText || '',
+  gridTwoByTwo: config.gridTwoByTwo ?? true,
+  showSoldOut: config.showSoldOut ?? true,
+});
+
 export const campaignService = {
   
   /**
@@ -28,38 +84,15 @@ export const campaignService = {
       return null;
     }
 
-    // Convert snake_case DB columns to camelCase for the React App
+    const config = mapCampaignConfig(data.config || {});
+
     return {
       id: data.id,
       name: data.name,
       slug: data.slug,
       welcomeMessage: data.welcome_message,
       brandColor: data.brand_color,
-      selectedProductIds: data.selected_product_ids || [], // Ensure array
-      itemLimit: data.item_limit,
-      orderLimitPerLink: data.order_limit_per_link,
-      maxCartValue: data.max_cart_value,
-      shippingZone: data.shipping_zone,
-      restrictedCountries: data.restricted_countries,
-      showPhoneField: data.show_phone_field,
-      showInstagramField: data.show_instagram_field,
-      showTiktokField: data.show_tiktok_field,
-      askCustomQuestion: data.ask_custom_question,
-      customQuestionLabel: data.custom_question_label,
-      customQuestionRequired: data.custom_question_required,
-      termsConsentText: data.terms_consent_text,
-      showConsentCheckbox: data.show_consent_checkbox,
-      requireSecondConsent: data.require_second_consent,
-      secondConsentText: data.second_consent_text,
-      emailOptIn: data.email_opt_in,
-      emailConsentText: data.email_consent_text,
-      submitButtonText: data.submit_button_text,
-      
-      // Configuration bits that might still be in JSON or implied
-      gridTwoByTwo: true, // defaulting for UI
-      showSoldOut: true,
-      linkToStore: data.link_to_store,
-      linkText: data.link_text
+      ...config,
     };
   },
 
@@ -85,74 +118,19 @@ export const campaignService = {
    * Maps camelCase frontend state to snake_case DB columns
    */
   async createCampaign(campaignData) {
+    const config = buildConfigFromCampaignData(campaignData);
     const payload = {
       name: campaignData.name,
       slug: campaignData.slug,
       welcome_message: campaignData.welcomeMessage,
       brand_color: campaignData.brandColor,
-      
-      // Mapping detailed fields to your new columns
-      selected_product_ids: campaignData.selectedProductIds,
-      item_limit: campaignData.itemLimit || 1,
-      order_limit_per_link: campaignData.orderLimitPerLink ? parseInt(campaignData.orderLimitPerLink) : null,
-      max_cart_value: campaignData.maxCartValue ? parseFloat(campaignData.maxCartValue) : null,
-      block_duplicate_orders: campaignData.blockDuplicateOrders,
-      
-      shipping_zone: campaignData.shippingZone,
-      restricted_countries: campaignData.restrictedCountries,
-      
-      show_phone_field: campaignData.requirePhone, // Note mapping difference in state vs db
-      show_instagram_field: campaignData.showInstagramField,
-      show_tiktok_field: campaignData.showTiktokField,
-      
-      ask_custom_question: campaignData.askCustomQuestion,
-      custom_question_label: campaignData.customQuestionLabel,
-      custom_question_required: campaignData.customQuestionRequired,
-      
-      show_consent_checkbox: campaignData.showConsentCheckbox,
-      terms_consent_text: campaignData.termsConsentText,
-      require_second_consent: campaignData.requireSecondConsent,
-      second_consent_text: campaignData.secondConsentText,
-      email_opt_in: campaignData.emailOptIn,
-      email_consent_text: campaignData.emailConsentText,
-      submit_button_text: campaignData.submitButtonText,
-      
-      link_to_store: campaignData.linkToStore,
-      link_text: campaignData.linkText,
-      
+      config,
       status: 'active',
       claims_count: 0
     };
 
     const { data, error } = await supabase
       .from('campaigns')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * INFLUENCER ACTION: Submit an order
-   */
-  async createOrder(orderData) {
-    const { campaignId, items, ...customerInfo } = orderData;
-
-    const payload = {
-      campaign_id: campaignId,
-      influencer_email: customerInfo.email,
-      influencer_name: `${customerInfo.firstName} ${customerInfo.lastName}`,
-      influencer_handle: customerInfo.instagram || customerInfo.tiktok || '',
-      shipping_address: customerInfo.address, // Assuming text or JSON based on your table
-      items: items, // Stores the array of selected products
-      status: 'pending',
-      created_at: new Date().toISOString()
-    };
-
-    const { data, error } = await supabase
-      .from('orders')
       .insert([payload])
       .select()
       .single();

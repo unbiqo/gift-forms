@@ -55,4 +55,31 @@ export const orderService = {
 
     return (data ?? []).map(mapRecord);
   },
+
+  async createOrder(orderData) {
+    const { campaignId, items, ...customerInfo } = orderData;
+
+    const payload = {
+      campaign_id: campaignId,
+      influencer_email: customerInfo.email,
+      influencer_name: `${customerInfo.firstName} ${customerInfo.lastName}`,
+      influencer_handle: customerInfo.instagram || customerInfo.tiktok || '',
+      influencer_phone: customerInfo.phone || null,
+      influencer_handle_instagram: customerInfo.instagram || '',
+      influencer_handle_tiktok: customerInfo.tiktok || '',
+      shipping_address: customerInfo.shippingDetails || customerInfo.address,
+      items,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
 };

@@ -79,7 +79,8 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const [step, setStep] = useState('selection');
   const [selectedIds, setSelectedIds] = useState([]);
   const [formData, setFormData] = useState({ 
-    firstName: '', lastName: '', email: '', phone: '', instagram: '', address: '' 
+    firstName: '', lastName: '', email: '', phone: '', instagram: '', tiktok: '', customAnswer: '', address: '',
+    consentPrimary: false, consentSecondary: false
   });
   
   // NEW: Store clean address data from Google (Zip, City, Country)
@@ -162,6 +163,12 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 
     try {
       if (!formData.email || !formData.address) throw new Error("Email and Address are required.");
+      if (campaign.showPhoneField && !formData.phone) throw new Error("Phone number is required.");
+      if (campaign.showInstagramField && !formData.instagram) throw new Error("Instagram handle is required.");
+      if (campaign.showTiktokField && !formData.tiktok) throw new Error("TikTok handle is required.");
+      if (campaign.askCustomQuestion && campaign.customQuestionRequired && !formData.customAnswer) throw new Error("Please answer the required question.");
+      if (campaign.showConsentCheckbox && !formData.consentPrimary) throw new Error("Please accept the consent terms.");
+      if (campaign.requireSecondConsent && !formData.consentSecondary) throw new Error("Please accept the additional consent.");
       if (error) throw new Error("Please fix the errors before continuing.");
 
       const selectedItems = products.filter(p => selectedIds.includes(p.id));
@@ -174,7 +181,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       };
 
       // Call the REAL Service
-      await campaignService.createOrder(orderPayload);
+      await orderService.createOrder(orderPayload);
       
       if (onSubmit) onSubmit(campaign.id);
       setStep('success');
@@ -265,6 +272,31 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             Claim {selectedIds.length > 0 ? `${selectedIds.length} Gift${selectedIds.length > 1 ? 's' : ''}` : 'Gifts'} <ChevronRight size={16} />
           </button>
         </div>
+
+        {campaign.showConsentCheckbox && (
+          <div className="space-y-2">
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                checked={formData.consentPrimary}
+                onChange={e => setFormData(p => ({ ...p, consentPrimary: e.target.checked }))}
+              />
+              <span>{campaign.termsConsentText || 'I agree to the campaign terms.'}</span>
+            </label>
+            {campaign.requireSecondConsent && (
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={formData.consentSecondary}
+                  onChange={e => setFormData(p => ({ ...p, consentSecondary: e.target.checked }))}
+                />
+                <span>{campaign.secondConsentText || 'I agree to the additional consent.'}</span>
+              </label>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -294,9 +326,36 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
         <input placeholder="Email address" type="email" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
           value={formData.email} onChange={e => setFormData(p => ({...p, email: e.target.value}))} />
         
+        {campaign.showPhoneField && (
+          <input
+            placeholder="Phone number"
+            type="tel"
+            className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            value={formData.phone}
+            onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
+          />
+        )}
+        
         {campaign.showInstagramField && (
            <input placeholder="@instagram" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
              value={formData.instagram} onChange={e => setFormData(p => ({...p, instagram: e.target.value}))} />
+        )}
+
+        {campaign.showTiktokField && (
+           <input placeholder="@tiktok" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+             value={formData.tiktok} onChange={e => setFormData(p => ({...p, tiktok: e.target.value}))} />
+        )}
+
+        {campaign.askCustomQuestion && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">{campaign.customQuestionLabel || 'Additional Details'}</label>
+            <textarea
+              className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              rows={3}
+              value={formData.customAnswer}
+              onChange={e => setFormData(p => ({ ...p, customAnswer: e.target.value }))}
+            />
+          </div>
         )}
 
         <div className="relative">
@@ -934,7 +993,6 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
     name: 'Summer Influencer Seeding',
     slug: 'summer-seeding',
     welcomeMessage: 'Hey! We love your content. Here is a gift on us.',
-    requirePhone: false,
     selectedProductIds: ['p1', 'p3'],
     brandColor: '#4f46e5',
     brandLogo: null,
@@ -1162,7 +1220,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
                 </RuleSection>
 
                 <RuleSection title="Contact Fields" icon={Users}>
-                  <RuleToggle label="Show Phone Field" description="Ask for phone number during checkout." enabled={data.requirePhone} onChange={v => updateField('requirePhone', v)} />
+                  <RuleToggle label="Show Phone Field" description="Ask for phone number during checkout." enabled={data.showPhoneField} onChange={v => updateField('showPhoneField', v)} />
                   <RuleToggle label="Show Instagram" description="Ask for Instagram handle." enabled={data.showInstagramField} onChange={v => updateField('showInstagramField', v)} />
                   <RuleToggle label="Show TikTok" description="Ask for TikTok handle." enabled={data.showTiktokField} onChange={v => updateField('showTiktokField', v)} />
                   
