@@ -14,5 +14,8 @@
 }
 
 .tooltip-fade {
+  position: absolute;
+  z-index: 50;
+  pointer-events: none;
   animation: tooltip-fade 150ms ease-in forwards;
 }

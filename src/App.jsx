@@ -1,14 +1,15 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   Layout, Package, Palette, Settings, ChevronRight, ChevronLeft,
   Info, Plus, Home, Users, Copy, ExternalLink, Download,
   AlertTriangle, CheckCircle, XCircle, Search, Filter,
   Loader2, Shield, MapPin, ShoppingCart, DollarSign, Globe, FileText,
-  Signal, Wifi, Battery, RefreshCw, ArrowUpDown
+  Signal, Wifi, Battery, RefreshCw, ArrowUpDown, Edit3
 } from 'lucide-react';
 import { googleAddressService } from './services/googleAddressService';
 import { orderService } from './services/orderService';
 import { campaignService } from './services/campaignService';
+import { COUNTRY_OPTIONS } from './constants/countries';
 
 const AnalyticsService = {
   calculateStats: (orders = []) => {
@@ -31,6 +32,7 @@ const AnalyticsService = {
  */
 
 const SHIPPING_ZONES = ["United States", "Canada", "United Kingdom", "Australia", "Germany"];
+const MIN_ADDRESS_LENGTH = 10;
 
 const Toggle = ({ enabled, onChange, label }) => (
   <button
@@ -76,8 +78,19 @@ const RuleToggle = ({ label, description, enabled, onChange }) => (
 
 /* --- CLAIM EXPERIENCE --- */
 const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) => {
-  const sanitizeName = (value = '') => value.replace(/[^a-zA-Z\s'-]/g, '').slice(0, 50);
-  const sanitizePhone = (value = '') => value.replace(/\D/g, '').slice(0, 15);
+  const sanitizeName = (value = '') => {
+    if (!value) return '';
+    return value
+      .replace(/[0-9]/g, '')
+      .replace(/[^a-zA-Z\s'-]/g, '')
+      .slice(0, 50);
+  };
+  const sanitizePhone = (value = '', previous = '', maxLength = 15) => {
+    const digitsOnly = (value || '').replace(/\D/g, '');
+    if (digitsOnly.length <= maxLength) return digitsOnly;
+    if ((previous || '').length >= maxLength) return previous;
+    return digitsOnly.slice(0, maxLength);
+  };
 
   const [step, setStep] = useState('selection');
   const [selectedIds, setSelectedIds] = useState([]);
@@ -99,6 +112,23 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const [error, setError] = useState(null);
   const [addressQuery, setAddressQuery] = useState('');
   const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [activeField, setActiveField] = useState(null);
+  const [phoneDigits, setPhoneDigits] = useState('');
+  const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const countrySearchRef = useRef(null);
+  const [selectedCountry, setSelectedCountry] = useState(() => {
+    const match = COUNTRY_OPTIONS.find((c) => c.name === campaign.shippingZone);
+    return match || COUNTRY_OPTIONS.find((c) => c.code === 'US') || COUNTRY_OPTIONS[0];
+  });
+  const suppressNextBlur = useRef(null);
+  const [successVariant, setSuccessVariant] = useState('standard');
+
+  const isAddressValid = useCallback((addressValue, structured) => {
+    if (structured) return true;
+    if (!addressValue) return false;
+    return addressValue.trim().length >= MIN_ADDRESS_LENGTH;
+  }, []);
 
   const showPhoneField = Boolean(campaign.showPhoneField);
   const showInstagramField = Boolean(campaign.showInstagramField);
@@ -109,6 +139,10 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const requireSecondConsent = showConsentCheckbox && Boolean(campaign.requireSecondConsent);
 
   useEffect(() => {
+    if (structuredAddress && addressQuery === formData.address) {
+      setAddressSuggestions([]);
+      return;
+    }
     if (addressQuery.length > 2) {
       const timeout = setTimeout(async () => {
         try {
@@ -121,7 +155,16 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       return () => clearTimeout(timeout);
     }
     setAddressSuggestions([]);
-  }, [addressQuery]);
+  }, [addressQuery, structuredAddress, formData.address]);
+
+  const filteredCountries = useMemo(() => {
+    const term = countrySearch.trim().toLowerCase();
+    if (!term) return COUNTRY_OPTIONS;
+    return COUNTRY_OPTIONS.filter((c) => (
+      c.name.toLowerCase().includes(term) ||
+      c.dialCode.includes(term)
+    ));
+  }, [countrySearch]);
 
   const availableProducts = useMemo(() => {
     if (!products) return [];
@@ -157,30 +200,121 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
     }
   };
 
+  const getLengthRules = useCallback((country) => ({
+    minLength: Math.min(Math.max(country?.minLength || 5, 5), 15),
+    maxLength: Math.min(Math.max(country?.maxLength || 15, 5), 15)
+  }), []);
+
+  const handleCountrySelect = useCallback((country) => {
+    const { maxLength } = getLengthRules(country);
+    const trimmedDigits = phoneDigits.slice(0, maxLength);
+    const fullE164 = trimmedDigits ? `+${country.dialCode}${trimmedDigits}` : '';
+    setSelectedCountry(country);
+    setPhoneDigits(trimmedDigits);
+    setFormData((prev) => ({ ...prev, phone: fullE164 }));
+    setCountrySearch('');
+    setFieldErrors((prev) => {
+      const { phone, ...rest } = prev;
+      return rest;
+    });
+    setIsCountryOpen(false);
+  }, [getLengthRules, phoneDigits]);
+
+  useEffect(() => {
+    const match = COUNTRY_OPTIONS.find((c) => c.name === campaign.shippingZone);
+    if (!match) return;
+    const { maxLength } = getLengthRules(match);
+    const trimmedDigits = phoneDigits.slice(0, maxLength);
+    const fullE164 = trimmedDigits ? `+${match.dialCode}${trimmedDigits}` : '';
+    setSelectedCountry(match);
+    setPhoneDigits(trimmedDigits);
+    setFormData((prev) => ({ ...prev, phone: fullE164 }));
+    setFieldErrors((prev) => {
+      const { phone, ...rest } = prev;
+      return rest;
+    });
+  }, [campaign.shippingZone]);
+
+  useEffect(() => {
+    const handleGlobalClick = (event) => {
+      if (!Object.keys(fieldErrors).length) return;
+      if (event.target.closest('[data-error-keep="true"]')) return;
+      suppressNextBlur.current = activeField === 'phone' ? 'phone' : null;
+      setFieldErrors({});
+    };
+    document.addEventListener('mousedown', handleGlobalClick);
+    return () => document.removeEventListener('mousedown', handleGlobalClick);
+  }, [fieldErrors, activeField]);
+
+  useEffect(() => {
+    if (isCountryOpen && countrySearchRef.current) {
+      countrySearchRef.current.focus();
+      countrySearchRef.current.select();
+    }
+  }, [isCountryOpen]);
+
   const ensureHandleFormat = (value = '') => {
     if (!value) return '';
     const trimmed = value.trim().replace(/\s+/g, '');
     const withoutLeading = trimmed.replace(/^@+/, '');
-    return withoutLeading ? `@${withoutLeading}` : '';
+    const sanitized = withoutLeading.replace(/[^a-zA-Z0-9._]/g, '');
+    return sanitized ? `@${sanitized}` : '';
+  };
+
+  const isValidEmail = (value = '') => {
+    const email = value.trim();
+    if (!email) return false;
+    if (email.length > 254) return false;
+    const parts = email.split('@');
+    if (parts.length !== 2) return false;
+    const [local, domain] = parts;
+    if (!local || !domain) return false;
+    if (local.length > 64) return false;
+    if (local.startsWith('.') || local.endsWith('.')) return false;
+    if (local.includes('..')) return false;
+    const localValid = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local);
+    if (!localValid) return false;
+    const domainLabels = domain.split('.');
+    if (domainLabels.length < 2) return false;
+    const domainValid = domainLabels.every((label) => {
+      if (!label) return false;
+      if (label.length > 63) return false;
+      if (!/^[A-Za-z0-9-]+$/.test(label)) return false;
+      if (label.startsWith('-') || label.endsWith('-')) return false;
+      return true;
+    });
+    if (!domainValid) return false;
+    if (domainLabels[domainLabels.length - 1].length < 2) return false;
+    return true;
   };
 
   const hasValidHandle = (value = '') => {
     if (!value) return false;
     const stripped = value.replace(/^@+/, '');
-    return Boolean(stripped && /[a-zA-Z0-9]/.test(stripped));
+    if (!stripped) return false;
+    const hasAlphanumeric = /[a-zA-Z0-9]/.test(stripped);
+    const charactersAllowed = /^[a-zA-Z0-9._]+$/.test(stripped);
+    return hasAlphanumeric && charactersAllowed;
   };
 
-  const validateField = useCallback((field, value) => {
+  const validateField = useCallback((field, value, options = {}) => {
+    const digitsOverride = options.digitsOverride;
+    const countryOverride = options.countryOverride;
     switch (field) {
       case 'email': {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(value || '')) return 'Please enter a valid email address.';
+        if (!isValidEmail(value)) return 'Please enter a valid email address.';
         return '';
       }
       case 'phone': {
         if (!showPhoneField) return '';
-        const digits = value || '';
-        if (digits.length < 10 || digits.length > 15) return 'Phone number must be 10-15 digits.';
+        const digits = digitsOverride ?? phoneDigits ?? '';
+        const country = countryOverride || selectedCountry;
+        const { minLength, maxLength } = getLengthRules(country);
+        if (!/^\d*$/.test(digits)) return 'Phone number must contain digits only.';
+        if (digits.length < minLength || digits.length > maxLength) {
+          const range = minLength === maxLength ? `${minLength}` : `${minLength}-${maxLength}`;
+          return `Phone number must be ${range} digits for ${country?.name || 'this country'}.`;
+        }
         return '';
       }
       case 'instagram': {
@@ -196,10 +330,10 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       default:
         return '';
     }
-  }, [showPhoneField, showInstagramField, showTiktokField]);
+  }, [showPhoneField, showInstagramField, showTiktokField, phoneDigits, selectedCountry, getLengthRules]);
 
-  const upsertFieldError = (field, value) => {
-    const message = validateField(field, value);
+  const upsertFieldError = (field, value, options = {}) => {
+    const message = validateField(field, value, options);
     setFieldErrors((prev) => {
       if (!message) {
         if (!(field in prev)) return prev;
@@ -212,22 +346,52 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 
   const handleFieldChange = (field, rawValue) => {
     let value = rawValue || '';
+    const maybeUpdateError = (options = {}) => {
+      if (!fieldErrors[field]) return;
+      upsertFieldError(field, value, options);
+    };
+
     if (field === 'firstName' || field === 'lastName') {
       value = sanitizeName(value);
     } else if (field === 'phone') {
-      value = sanitizePhone(value);
+      const { maxLength } = getLengthRules(selectedCountry);
+      const sanitizedDigits = sanitizePhone(value, phoneDigits, maxLength);
+      setPhoneDigits(sanitizedDigits);
+      value = sanitizedDigits ? `+${selectedCountry.dialCode}${sanitizedDigits}` : '';
+      maybeUpdateError({ digitsOverride: sanitizedDigits, countryOverride: selectedCountry });
     } else if (field === 'instagram' || field === 'tiktok') {
       value = ensureHandleFormat(value);
+      maybeUpdateError();
     }
 
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (['email', 'phone', 'instagram', 'tiktok'].includes(field)) {
-      upsertFieldError(field, value);
+    if (!['phone', 'instagram', 'tiktok'].includes(field)) {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+      if (fieldErrors[field]) {
+        maybeUpdateError();
+      }
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: value }));
     }
   };
 
   const handleBlur = (field) => {
+    if (suppressNextBlur.current === field) {
+      suppressNextBlur.current = null;
+      return;
+    }
     upsertFieldError(field, formData[field]);
+  };
+
+  const handleFocus = (field) => {
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      if (activeField && activeField !== field) {
+        delete next[activeField];
+      }
+      delete next[field];
+      return next;
+    });
+    setActiveField(field);
   };
 
   const forceValidateFields = () => {
@@ -246,24 +410,66 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   };
 
   const isConsentRequired = showConsentCheckbox;
-  const consentsSatisfied = !isConsentRequired || (formData.consentPrimary && (!requireSecondConsent || formData.consentSecondary));
-  const baseFieldsComplete = Boolean(formData.email && formData.address);
-  const contactFieldsComplete = (!showPhoneField || formData.phone.length >= 10) && (!showInstagramField || hasValidHandle(formData.instagram)) && (!showTiktokField || hasValidHandle(formData.tiktok));
+  const baseFieldsComplete = Boolean(formData.email && isAddressValid(formData.address, structuredAddress));
+  const phoneRules = getLengthRules(selectedCountry);
+  const phoneMeetsRules = phoneDigits.length >= phoneRules.minLength && phoneDigits.length <= phoneRules.maxLength;
+  const contactFieldsComplete =
+    (!showPhoneField || phoneMeetsRules) &&
+    (!showInstagramField || hasValidHandle(formData.instagram)) &&
+    (!showTiktokField || hasValidHandle(formData.tiktok));
   const customAnswered = (!askCustomQuestion || !customQuestionRequired || Boolean(formData.customAnswer?.trim()));
-  const hasVisibleErrors = Object.values(fieldErrors).some(Boolean);
-  const canSubmit = !isSubmitting && !error && baseFieldsComplete && contactFieldsComplete && customAnswered && consentsSatisfied && !hasVisibleErrors;
+  const canSubmit = !isSubmitting && baseFieldsComplete && contactFieldsComplete && customAnswered;
 
   const handleClaim = async () => {
     if (isPreview) return;
     const validationErrors = forceValidateFields();
-    if (Object.keys(validationErrors).length > 0 || !consentsSatisfied || !customAnswered || !contactFieldsComplete) {
-      setError('Please fix highlighted fields before submitting.');
+    const consentMissing = showConsentCheckbox && (!formData.consentPrimary || (requireSecondConsent && !formData.consentSecondary));
+    if (!isAddressValid(formData.address, structuredAddress)) {
+      setError('Please enter a complete address to continue.');
+      return;
+    }
+    if (Object.keys(validationErrors).length > 0 || consentMissing || !customAnswered || !contactFieldsComplete) {
+      if (consentMissing) {
+        setError('Please accept the consent terms to continue.');
+      } else {
+        setError('Please fix highlighted fields before submitting.');
+      }
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
     try {
+      const isDuplicate = await orderService.checkDuplicate(campaign.id, {
+        email: formData.email,
+        phone: formData.phone,
+        instagram: formData.instagram,
+        tiktok: formData.tiktok
+      });
+      if (isDuplicate) {
+        await orderService.logDuplicateAttempt({
+          campaignId: campaign.id,
+          influencerInfo: {
+            name: `${formData.firstName || ''} ${formData.lastName || ''}`.trim(),
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            phone: formData.phone,
+            instagram: formData.instagram,
+            tiktok: formData.tiktok,
+            address: formData.address,
+            shippingDetails: structuredAddress,
+            items: products.filter((p) => selectedIds.includes(p.id))
+          },
+          reason: 'Duplicate influencer details'
+        }).catch((dupErr) => {
+          console.error('Failed to log duplicate attempt', dupErr);
+        });
+        setSuccessVariant('duplicate');
+        setStep('success');
+        return;
+      }
+
       if (!formData.email || !formData.address) throw new Error('Email and Address are required.');
       if (showPhoneField && !formData.phone) throw new Error('Phone number is required.');
       if (showInstagramField && !formData.instagram) throw new Error('Instagram handle is required.');
@@ -293,23 +499,26 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
   const renderTooltip = (message) => {
     if (!message) return null;
     return (
-      <div className="absolute right-0 top-full mt-1 z-50 pointer-events-none shadow-lg">
-        <div className="relative bg-red-500 text-white text-xs rounded-lg px-2 py-1 tooltip-fade">
+      <div className="tooltip-fade absolute right-0 -top-1 -translate-y-full transform pointer-events-none shadow-lg">
+        <div className="relative bg-red-500 text-white text-xs rounded-lg px-2 py-1">
           {message}
-          <span className="absolute -top-1 right-4 w-2 h-2 bg-red-500 rotate-45" />
+          <span className="absolute -bottom-1 right-4 w-2 h-2 bg-red-500 rotate-45" />
         </div>
       </div>
     );
   };
 
   if (step === 'success') {
+    const isReview = successVariant === 'duplicate';
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-white">
-        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+        <div className={`w-16 h-16 ${isReview ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-600'} rounded-full flex items-center justify-center mb-4`}>
           <Package size={32} />
         </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Order Confirmed!</h2>
-        <p className="text-gray-500 text-sm">Your gifts are on the way.</p>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">{isReview ? 'Submission Received' : 'Order Confirmed!'}</h2>
+        <p className="text-gray-500 text-sm">
+          {isReview ? 'Thanks! Your submission is under review.' : 'Your gifts are on the way.'}
+        </p>
       </div>
     );
   }
@@ -359,6 +568,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                     </div>
                     <div className="px-1">
                       <div className="text-xs font-medium text-gray-900 truncate">{p.title}</div>
+                      <div className="text-[11px] text-gray-500">${p.price}</div>
                     </div>
                   </div>
                 );
@@ -380,7 +590,6 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
       </div>
     );
   }
-
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 border-b border-gray-100 flex items-center gap-2 sticky top-0 bg-white z-10">
@@ -402,12 +611,14 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             placeholder="First name"
             className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             value={formData.firstName}
+            onFocus={() => handleFocus('firstName')}
             onChange={(e) => handleFieldChange('firstName', e.target.value)}
           />
           <input
             placeholder="Last name"
             className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             value={formData.lastName}
+            onFocus={() => handleFocus('lastName')}
             onChange={(e) => handleFieldChange('lastName', e.target.value)}
           />
         </div>
@@ -418,6 +629,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
             type="email"
             className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.email ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
             value={formData.email}
+            onFocus={() => handleFocus('email')}
             onChange={(e) => handleFieldChange('email', e.target.value)}
             onBlur={() => handleBlur('email')}
           />
@@ -426,15 +638,65 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 
         {showPhoneField && (
           <div className="relative pb-5">
-            <input
-              placeholder="Phone number"
-              type="tel"
-              className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.phone ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
-              value={formData.phone}
-              onChange={(e) => handleFieldChange('phone', e.target.value)}
-              onBlur={() => handleBlur('phone')}
-            />
-            {renderTooltip(fieldErrors.phone)}
+            <div
+              className={`relative flex items-center rounded-xl border overflow-visible focus-within:ring-2 ${
+                fieldErrors.phone ? 'border-red-400 focus-within:ring-red-400' : 'border-gray-200 focus-within:ring-indigo-500'
+              }`}
+            >
+              <div className="relative h-full">
+                <button
+                  type="button"
+                  onClick={() => setIsCountryOpen((prev) => !prev)}
+                  className="h-full px-3 flex items-center gap-2 bg-gray-50 text-sm text-gray-900 border-r border-gray-200"
+                >
+                  <span className="text-lg leading-none">{selectedCountry.flag}</span>
+                  <span className="font-medium">+{selectedCountry.dialCode}</span>
+                  <ChevronRight size={14} className="text-gray-400 -rotate-90" />
+                </button>
+                {isCountryOpen && (
+                  <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50" data-error-keep="true">
+                    <div className="p-2 border-b border-gray-100">
+                      <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-md border border-gray-200">
+                        <Search size={14} className="text-gray-400" />
+                        <input
+                          ref={countrySearchRef}
+                          className="w-full bg-transparent text-sm outline-none"
+                          placeholder="Search country"
+                          value={countrySearch}
+                          onChange={(e) => setCountrySearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {filteredCountries.map((c) => (
+                        <button
+                          key={c.code}
+                          type="button"
+                          onClick={() => handleCountrySelect(c)}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-sm"
+                        >
+                          <span className="text-lg leading-none">{c.flag}</span>
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">{c.name}</div>
+                            <div className="text-xs text-gray-500">+{c.dialCode}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <input
+                placeholder="Phone number"
+                type="tel"
+                className="flex-1 px-3 py-3 text-sm focus:ring-0 border-0 outline-none"
+                value={phoneDigits}
+                onFocus={() => handleFocus('phone')}
+                onChange={(e) => handleFieldChange('phone', e.target.value)}
+                onBlur={() => handleBlur('phone')}
+              />
+            </div>
+            {renderTooltip(fieldErrors.phone, 'right')}
           </div>
         )}
 
@@ -444,6 +706,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
               placeholder="@instagram"
               className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.instagram ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
               value={formData.instagram}
+              onFocus={() => handleFocus('instagram')}
               onChange={(e) => handleFieldChange('instagram', e.target.value)}
               onBlur={() => handleBlur('instagram')}
             />
@@ -457,6 +720,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
               placeholder="@tiktok"
               className={`w-full rounded-xl px-3 py-3 text-sm focus:ring-2 outline-none ${fieldErrors.tiktok ? 'border border-red-400 focus:ring-red-400' : 'border border-gray-200 focus:ring-indigo-500'}`}
               value={formData.tiktok}
+              onFocus={() => handleFocus('tiktok')}
               onChange={(e) => handleFieldChange('tiktok', e.target.value)}
               onBlur={() => handleBlur('tiktok')}
             />
@@ -471,6 +735,7 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
               className="w-full rounded-xl border border-gray-200 px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
               rows={3}
               value={formData.customAnswer}
+              onFocus={() => handleFocus('customAnswer')}
               onChange={(e) => setFormData((prev) => ({ ...prev, customAnswer: e.target.value }))}
             />
           </div>
@@ -511,7 +776,10 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                 type="checkbox"
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                 checked={formData.consentPrimary}
-                onChange={(e) => setFormData((prev) => ({ ...prev, consentPrimary: e.target.checked }))}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, consentPrimary: e.target.checked }));
+                  setError(null);
+                }}
               />
               <span>{campaign.termsConsentText || 'I agree to the campaign terms.'}</span>
             </label>
@@ -521,10 +789,19 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
                   type="checkbox"
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   checked={formData.consentSecondary}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, consentSecondary: e.target.checked }))}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, consentSecondary: e.target.checked }));
+                    setError(null);
+                  }}
                 />
                 <span>{campaign.secondConsentText || 'I agree to the additional consent.'}</span>
               </label>
+            )}
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
             )}
           </div>
         )}
@@ -546,6 +823,8 @@ const ClaimExperience = ({ campaign, products, isPreview = false, onSubmit }) =>
 /* --- ORDERS DASHBOARD (Improved with AnalyticsService) --- */
 const OrdersDashboard = ({ onNavigateDashboard }) => {
   const [orders, setOrders] = useState([]);
+  const [duplicateAttempts, setDuplicateAttempts] = useState([]);
+  const [duplicateError, setDuplicateError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -595,6 +874,17 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     return consents;
   }, [orders, buildConsentStatus]);
 
+  const fetchDuplicates = useCallback(async () => {
+    setDuplicateError(null);
+    try {
+      const dupes = await orderService.listDuplicateAttempts({ limit: 100 });
+      setDuplicateAttempts(dupes);
+    } catch (dupErr) {
+      console.error('Unable to load duplicate attempts', dupErr);
+      setDuplicateError('Unable to load duplicate attempts. Check Supabase policies.');
+    }
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     setRefreshing(true);
     setError(null);
@@ -612,7 +902,8 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]);
+    fetchDuplicates();
+  }, [fetchOrders, fetchDuplicates]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
@@ -623,6 +914,14 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
     });
   }, [orders, filters, buildConsentStatus]);
 
+  const duplicateByCampaign = useMemo(() => {
+    return duplicateAttempts.reduce((acc, attempt) => {
+      const key = attempt.campaignName || attempt.campaignId || 'unknown';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(attempt);
+      return acc;
+    }, {});
+  }, [duplicateAttempts]);
   const sortedOrders = useMemo(() => {
     const data = [...filteredOrders];
     const { key, direction } = sortConfig;
@@ -910,6 +1209,61 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            {duplicateAttempts.length > 0 && (
+              <div className="bg-amber-50 border-b border-amber-200 px-6 py-4 max-h-72 overflow-y-auto">
+                <div className="bg-amber-200 text-amber-800 text-xs font-semibold px-2 py-1 rounded-full uppercase tracking-wide inline-flex">Duplicate Attempts</div>
+                {duplicateError && (
+                  <div className="mt-2 text-xs text-amber-800 bg-amber-100 border border-amber-200 rounded px-3 py-2">
+                    {duplicateError}
+                  </div>
+                )}
+                <div className="mt-3 space-y-3">
+                  {Object.entries(duplicateByCampaign).map(([campaignName, attempts]) => (
+                    <div key={campaignName} className="rounded-lg border border-amber-200 bg-amber-50/80 p-3">
+                      <div className="text-sm font-semibold text-amber-900 mb-2">{campaignName}</div>
+                      <div className="space-y-2">
+                        {attempts.map((a) => (
+                          <div key={a.id} className="bg-white/80 border border-amber-100 rounded-lg p-3 text-sm flex items-start justify-between gap-3 min-h-[120px]">
+                            <div className="space-y-1 text-amber-900">
+                              <div className="font-semibold text-amber-900">
+                                {a.influencerInfo?.name?.trim() || a.influencerInfo?.fullName?.trim() || a.influencerInfo?.email || 'Unnamed Influencer'}
+                              </div>
+                              <div className="text-xs text-amber-700">{a.influencerInfo?.email || 'No email'}</div>
+                              <div className="text-xs text-amber-700">IG: {a.influencerInfo?.instagram || '—'} | TT: {a.influencerInfo?.tiktok || '—'}</div>
+                              <div className="text-xs text-amber-700">Phone: {a.influencerInfo?.phone || '—'}</div>
+                              <div className="text-xs text-amber-700">Reason: {a.reason}</div>
+                              <div className="text-xs text-amber-700">Decision: {a.decision || 'pending'}</div>
+                              <div className="text-xs text-amber-700">At: {formatDate(a.createdAt)}</div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={async () => {
+                                  await orderService.acceptDuplicateAttempt(a.id);
+                                  await fetchDuplicates();
+                                  await fetchOrders();
+                                }}
+                                className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded hover:bg-green-100"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  await orderService.declineDuplicateAttempt(a.id);
+                                  await fetchDuplicates();
+                                }}
+                                className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded hover:bg-red-100"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
@@ -918,7 +1272,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={fetchOrders}
+                    onClick={async () => { await fetchOrders(); await fetchDuplicates(); }}
                     disabled={refreshing}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                   >
@@ -1049,7 +1403,7 @@ const OrdersDashboard = ({ onNavigateDashboard }) => {
 };
 
 /* --- CAMPAIGN DASHBOARD --- */
-const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOrders }) => {
+const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onEditCampaign, onViewOrders }) => {
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
@@ -1091,7 +1445,16 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
                 <tbody className="divide-y divide-gray-100">
                   {campaigns.map((c) => (
                     <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-gray-900">{c.name}</td>
+                      <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                        <span>{c.name}</span>
+                        <button
+                          onClick={() => onEditCampaign(c)}
+                          className="text-indigo-600 hover:text-indigo-800"
+                          title="Edit campaign"
+                        >
+                          <Edit3 size={16} />
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <a href={`#claim/${c.slug}`} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 hover:text-indigo-600">gift.app/{c.slug}</a>
                       </td>
@@ -1128,56 +1491,56 @@ const DashboardHome = ({ campaigns, onCreateCampaign, onDeleteCampaign, onViewOr
 };
 
 /* --- CAMPAIGN BUILDER (Restored Full Functionality) --- */
-const CampaignBuilder = ({ onPublish, onCancel }) => {
+const CampaignBuilder = ({ onPublish, onCancel, initialData = null }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [isSaving, setIsSaving] = useState(false);
   const [data, setData] = useState({
-    name: 'Summer Influencer Seeding',
-    slug: 'summer-seeding',
-    welcomeMessage: 'Hey! We love your content. Here is a gift on us.',
-    selectedProductIds: ['p1', 'p3'],
-    brandColor: '#4f46e5',
-    brandLogo: null,
-    itemLimit: 1,
-    shippingZone: 'United States',
-    restrictedCountries: '',
+    name: initialData?.name || 'Summer Influencer Seeding',
+    slug: initialData?.slug || 'summer-seeding',
+    welcomeMessage: initialData?.welcomeMessage || 'Hey! We love your content. Here is a gift on us.',
+    selectedProductIds: initialData?.selectedProductIds || ['p1', 'p3'],
+    brandColor: initialData?.brandColor || '#4f46e5',
+    brandLogo: initialData?.brandLogo || null,
+    itemLimit: initialData?.itemLimit || 1,
+    shippingZone: initialData?.shippingZone || 'United States',
+    restrictedCountries: initialData?.restrictedCountries || '',
     
     // Limits
-    orderLimitPerLink: '',
-    maxCartValue: '',
-    blockDuplicateOrders: false,
+    orderLimitPerLink: initialData?.orderLimitPerLink || '',
+    maxCartValue: initialData?.maxCartValue || '',
+    blockDuplicateOrders: initialData?.blockDuplicateOrders || false,
 
     // Contact
-    showPhoneField: false,
-    showInstagramField: true,
-    showTiktokField: false,
-    askCustomQuestion: false,
-    customQuestionLabel: '',
-    customQuestionRequired: false,
+    showPhoneField: initialData?.showPhoneField || false,
+    showInstagramField: initialData?.showInstagramField ?? true,
+    showTiktokField: initialData?.showTiktokField || false,
+    askCustomQuestion: initialData?.askCustomQuestion || false,
+    customQuestionLabel: initialData?.customQuestionLabel || '',
+    customQuestionRequired: initialData?.customQuestionRequired || false,
 
     // Product Settings
-    showSoldOut: true,
-    hideInactiveProducts: true,
-    allowQuantitySelector: false,
-    linkToStore: '',
-    linkText: '',
-    gridTwoByTwo: true,
+    showSoldOut: initialData?.showSoldOut ?? true,
+    hideInactiveProducts: initialData?.hideInactiveProducts ?? true,
+    allowQuantitySelector: initialData?.allowQuantitySelector || false,
+    linkToStore: initialData?.linkToStore || '',
+    linkText: initialData?.linkText || '',
+    gridTwoByTwo: initialData?.gridTwoByTwo ?? true,
 
     // Content & Consent
-    showConsentCheckbox: true,
-    termsConsentText: '',
-    requireSecondConsent: false,
-    secondConsentText: '',
-    emailOptIn: true,
-    emailConsentText: '',
-    submitButtonText: '',
+    showConsentCheckbox: initialData?.showConsentCheckbox ?? true,
+    termsConsentText: initialData?.termsConsentText || '',
+    requireSecondConsent: initialData?.requireSecondConsent || false,
+    secondConsentText: initialData?.secondConsentText || '',
+    emailOptIn: initialData?.emailOptIn ?? true,
+    emailConsentText: initialData?.emailConsentText || '',
+    submitButtonText: initialData?.submitButtonText || '',
 
     // Order Processing
-    orderTags: '',
-    customerTags: '',
-    discountCode: 'INFLUENCERGIFT',
-    keepDraft: false,
-    enableBilling: false,
+    orderTags: initialData?.orderTags || '',
+    customerTags: initialData?.customerTags || '',
+    discountCode: initialData?.discountCode || 'INFLUENCERGIFT',
+    keepDraft: initialData?.keepDraft || false,
+    enableBilling: initialData?.enableBilling || false,
   });
 
   // Get products from service
@@ -1515,7 +1878,7 @@ const CampaignBuilder = ({ onPublish, onCancel }) => {
         <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
           <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">Cancel</button>
           <button onClick={handlePublish} disabled={isSaving} className="px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg shadow-sm hover:bg-indigo-700 disabled:opacity-50">
-            {isSaving ? 'Publishing...' : 'Publish Campaign'}
+            {isSaving ? 'Publishing...' : initialData ? 'Save Campaign' : 'Publish Campaign'}
           </button>
         </div>
       </div>
@@ -1547,6 +1910,7 @@ export default function App() {
   const [campaigns, setCampaigns] = useState([]);
   const [view, setView] = useState('dashboard');
   const [loading, setLoading] = useState(true);
+  const [editingCampaign, setEditingCampaign] = useState(null);
 
   // Initial Load from Supabase
   const loadCampaigns = async () => {
@@ -1596,7 +1960,11 @@ export default function App() {
   }
   
   if (route === '#create') {
-    return <CampaignBuilder onPublish={() => { loadCampaigns(); window.location.hash = ''; }} onCancel={() => window.location.hash = ''} />;
+    return <CampaignBuilder onPublish={() => { loadCampaigns(); setEditingCampaign(null); window.location.hash = ''; }} onCancel={() => { setEditingCampaign(null); window.location.hash = ''; }} />;
+  }
+
+  if (route === '#edit') {
+    return <CampaignBuilder initialData={editingCampaign} onPublish={() => { loadCampaigns(); setEditingCampaign(null); window.location.hash = ''; }} onCancel={() => { setEditingCampaign(null); window.location.hash = ''; }} />;
   }
   
   if (view === 'orders') return <OrdersDashboard onNavigateDashboard={() => setView('dashboard')} />;
@@ -1606,6 +1974,7 @@ export default function App() {
       campaigns={campaigns}
       onCreateCampaign={() => (window.location.hash = '#create')}
       onDeleteCampaign={handleDeleteCampaign}
+      onEditCampaign={(c) => { setEditingCampaign({ ...c.config, name: c.name, welcomeMessage: c.welcome_message || c.welcomeMessage, brandColor: c.brand_color || c.brandColor, slug: c.slug }); window.location.hash = '#edit'; }}
       onViewOrders={() => setView('orders')}
     />
   );
